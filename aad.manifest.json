@@ -1,0 +1,69 @@
+{
+    "id": "${{AAD_APP_OBJECT_ID}}",
+    "appId": "${{AAD_APP_CLIENT_ID}}",
+    "displayName": "AsungOrgChart${{APP_NAME_SUFFIX}}",
+    "identifierUris": [
+        "api://${{APP_ID_URI_DOMAIN}}/${{AAD_APP_CLIENT_ID}}"
+    ],
+    "signInAudience": "AzureADMyOrg",
+    "api": {
+        "oauth2PermissionScopes": [
+            {
+                "adminConsentDescription": "Allows Teams to call the app's web APIs as the user.",
+                "adminConsentDisplayName": "Teams can access the app’s web APIs",
+                "id": "${{AAD_APP_ACCESS_AS_USER_PERMISSION_ID}}",
+                "isEnabled": true,
+                "type": "User",
+                "userConsentDescription": "Enable Teams to call this app's web APIs with the same rights as you have.",
+                "userConsentDisplayName": "Teams can access app’s web APIs",
+                "value": "access_as_user"
+            }
+        ],
+        "preAuthorizedApplications": [
+            {
+                "appId": "1fec8e78-bce4-4aaf-ab1b-5451cc387264",
+                "delegatedPermissionIds": [
+                    "${{AAD_APP_ACCESS_AS_USER_PERMISSION_ID}}"
+                ]
+            },
+            {
+                "appId": "5e3ce6c0-2b1f-4285-8d4b-75ee78787346",
+                "delegatedPermissionIds": [
+                    "${{AAD_APP_ACCESS_AS_USER_PERMISSION_ID}}"
+                ]
+            }
+        ]
+    },
+    "info": {},
+    "publicClient": {
+        "redirectUris": []
+    },
+    "requiredResourceAccess": [
+        {
+            "resourceAppId": "00000003-0000-0000-c000-000000000000",
+            "resourceAccess": [
+                {
+                    "id": "e1fe6dd8-ba31-4d61-89e7-88639da4683d",
+                    "type": "Scope"
+                },
+                {
+                    "id": "a154be20-db9c-4678-8ab7-66f6cc099a59",
+                    "type": "Scope"
+                },
+                {
+                    "id": "9c7a330d-35b3-4aa1-963d-cb2b9f927841",
+                    "type": "Scope"
+                }
+            ]
+        }
+    ],
+    "web": {
+        "redirectUris": [],
+        "implicitGrantSettings": {}
+    },
+    "spa": {
+        "redirectUris": [
+            "${{TAB_ENDPOINT}}/auth-end.html"
+        ]
+    }
+}
