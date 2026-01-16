@@ -44,7 +44,7 @@ export const buildOrgTree = (list: OrgData[], companyCode?: string): OrgTreeNode
     list.forEach((item) => {
         // 회사 코드가 지정되어 있고, 해당 회사의 데이터가 아니면 건너뜀 (단, orgLevel 0인 회사 자체는 포함할 수도 있음 로직에 따라 결정)
         // 여기서는 회사 선택 시 해당 회사 하위 트리만 보여주는 것을 가정
-        // 단, "전체" 선택 시 모든 회사(Level 0)가 Root가 됨
+        // 단, "전체" 선택 시 모든 회사가 Root가 됨
 
         // 회사 코드 필터링 로직:
         // 만약 특정 회사(예: 'AD')가 선택되었다면, companyCode가 'AD'인 것들만 처리
@@ -136,6 +136,30 @@ export const getAllIds = (nodes: OrgTreeNode[]): Set<string> => {
     };
     nodes.forEach(traverse);
     return ids;
+};
+
+// 재귀적으로 부서원 수를 집계하는 함수 (Bottom-up)
+export const calculateTotalCounts = (
+    nodes: OrgTreeNode[],
+    directCounts: Map<string, number>
+): Map<string, number> => {
+    const totalCounts = new Map<string, number>();
+
+    const traverse = (node: OrgTreeNode): number => {
+        let sum = directCounts.get(node.orgId) || 0; // 내 부서원
+
+        if (node.children) {
+            node.children.forEach(child => {
+                sum += traverse(child); // 하위 부서원 누적
+            });
+        }
+
+        totalCounts.set(node.orgId, sum);
+        return sum;
+    };
+
+    nodes.forEach(node => traverse(node));
+    return totalCounts;
 };
 
 /**

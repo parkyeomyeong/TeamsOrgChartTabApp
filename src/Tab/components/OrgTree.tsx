@@ -149,11 +149,18 @@ export interface OrgTreeViewProps {
     onSelectOrg: (org: OrgData) => void;
     selectedOrgId?: string;
     onSearch?: (category: string, term: string) => void;
-    orgMap?: Map<string, OrgData>; // [Optimization] O(1) 조회를 위한 Map
+    orgMap?: Map<string, OrgData>; // O(1) 조회를 위한 Map
+    memberCounts?: Map<string, number>; // 부서원 수
 }
 
 // 왼쪽 조직도 전체 컴포넌트 (검색, 조직도 맵)
-export const OrgTreeView: React.FC<OrgTreeViewProps> = ({ onSelectOrg, selectedOrgId, onSearch, orgMap }) => {
+export const OrgTreeView: React.FC<OrgTreeViewProps> = ({
+    onSelectOrg,
+    selectedOrgId,
+    onSearch,
+    orgMap,
+    memberCounts
+}) => {
     const [data, setData] = useState<OrgTreeNode[]>([]);
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set()); // 펼쳐진 부서 ID 목록
     const [searchTerm, setSearchTerm] = useState(""); // 검색어
@@ -161,7 +168,7 @@ export const OrgTreeView: React.FC<OrgTreeViewProps> = ({ onSelectOrg, selectedO
     const [searchCategory, setSearchCategory] = useState("user"); // 검색 카테고리
     const [companyCode, setCompanyCode] = useState("AD"); // 회사 코드
 
-    // 1. 데이터 로드 (회사 코드 변경 시)
+    // 데이터 로드 (회사 코드 변경 시)
     useEffect(() => {
         const tree: OrgTreeNode[] = buildOrgTree(orgList, companyCode === 'ALL' ? undefined : companyCode);
         setData(tree);
@@ -174,7 +181,7 @@ export const OrgTreeView: React.FC<OrgTreeViewProps> = ({ onSelectOrg, selectedO
         setExpandedIds(newExpanded);
     }, [companyCode]);
 
-    // [상태 복원] 마운트 시 저장된 펼침 상태 불러오기
+    // 마운트 시 저장된 펼침 상태 불러오기
     useEffect(() => {
         const saved = localStorage.getItem("orgTree_expandedIds");
         if (saved) {
@@ -185,7 +192,7 @@ export const OrgTreeView: React.FC<OrgTreeViewProps> = ({ onSelectOrg, selectedO
         }
     }, []);
 
-    // [상태 저장] 펼침 상태가 바뀔 때마다 저장
+    // 펼침 상태가 바뀔 때마다 저장
     useEffect(() => {
         if (expandedIds.size > 0) {
             const idsArray = Array.from(expandedIds);
@@ -193,20 +200,19 @@ export const OrgTreeView: React.FC<OrgTreeViewProps> = ({ onSelectOrg, selectedO
         }
     }, [expandedIds]);
 
-    // 2. 선택된 조직 자동 확장 (선택된 조직이 변경될 때 그 조직만 펼쳐서 보여주기)
+    // 선택된 조직 자동 확장
     useEffect(() => {
         if (!selectedOrgId) return;
 
         setExpandedIds(prev => {
-
-            // const nextExpanded = new Set<string>();  // 일단 전부 다 접고(초기화) 해당 부서 경로만 펼침 (취소)
-            const nextExpanded = new Set<string>(prev);  // 기존 펼침 상태 유지
+            // 기존 펼침 상태 유지
+            const nextExpanded = new Set<string>(prev);
             let currentId = selectedOrgId;
             let safety = 0;
 
             // 부모 경로를 찾아 확장 목록에 추가
             while (currentId && safety < 100) {
-                // [Optimization] Map이 있으면 O(1), 없으면 O(N)
+                // Map이 있으면 O(1), 없으면 O(N)
                 const node = orgMap ? orgMap.get(currentId) : orgList.find(o => o.orgId === currentId);
 
                 if (node && node.parentId) {
@@ -221,7 +227,7 @@ export const OrgTreeView: React.FC<OrgTreeViewProps> = ({ onSelectOrg, selectedO
         });
     }, [selectedOrgId]);
 
-    // [New] 선택된 조직으로 자동 스크롤
+    // 선택된 조직으로 자동 스크롤
     useEffect(() => {
         if (selectedOrgId) {
             // 트리 확장이 반영된 후 스크롤하기 위해 약간의 지연 시간 부여
@@ -253,7 +259,7 @@ export const OrgTreeView: React.FC<OrgTreeViewProps> = ({ onSelectOrg, selectedO
         }
     };
 
-    // 3. 검색 필터링 (부서명인 경우 우측에 표시되는 임직원 목록이 아닌 조직도 맵에 찾는 부서가 포함된 트리만 표시)
+    // 검색 필터링 (부서명인 경우 우측에 표시되는 임직원 목록이 아닌 조직도 맵에 찾는 부서가 포함된 트리만 표시)
     const filteredTree = useMemo(() => {
         if (searchCategory === 'dept' && activeSearchTerm) {
             return filterTree(data, activeSearchTerm, ['orgName', 'orgId']);
@@ -358,7 +364,8 @@ export const OrgTreeView: React.FC<OrgTreeViewProps> = ({ onSelectOrg, selectedO
                         selectedId={selectedOrgId}
                         onToggle={handleToggle}
                         onSelect={handleSelect}
-                        isLast={index === filteredTree.length - 1}
+                        highlightTerm={searchCategory === 'dept' ? activeSearchTerm : undefined}
+                        memberCounts={memberCounts}
                     />
                 ))}
             </div>
@@ -373,13 +380,36 @@ interface OrgTreeItemProps {
     selectedId?: string;
     onToggle: (node: OrgTreeNode) => void;
     onSelect: (node: OrgTreeNode) => void;
-    isLast: boolean;
+    highlightTerm?: string; // 하이라이트 할 검색어
+    memberCounts?: Map<string, number>; // 부서원 수 Map
 }
 
-const OrgTreeItem: React.FC<OrgTreeItemProps> = ({ node, depth, expandedIds, selectedId, onToggle, onSelect }) => {
+// 텍스트 하이라이트 함수
+const highlightText = (text: string, term?: string) => {
+    if (!term || term.trim() === '') {
+        return <span>{text}</span>;
+    }
+    const parts = text.split(new RegExp(`(${term})`, 'gi'));
+    return (
+        <span>
+            {parts.map((part, i) =>
+                part.toLowerCase() === term.toLowerCase() ? (
+                    <span key={i} style={{ backgroundColor: theme.colors.highlight, fontWeight: 'bold' }}>
+                        {part}
+                    </span>
+                ) : (
+                    part
+                )
+            )}
+        </span>
+    );
+};
+
+const OrgTreeItem: React.FC<OrgTreeItemProps> = ({ node, depth, expandedIds, selectedId, onToggle, onSelect, highlightTerm, memberCounts }) => {
     const isExpanded = expandedIds.has(node.orgId);
     const isSelected = selectedId === node.orgId;
     const hasChildren = node.children && node.children.length > 0;
+    const count = memberCounts?.get(node.orgId) || 0; // 인원수 조회
 
     const handleIconClick = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -399,7 +429,7 @@ const OrgTreeItem: React.FC<OrgTreeItemProps> = ({ node, depth, expandedIds, sel
     return (
         <div>
             <div
-                id={`org-node-${node.orgId}`} // [New] 스크롤 타겟팅용 ID
+                id={`org-node-${node.orgId}`} // 스크롤 타겟팅용 ID
                 style={{
                     ...itemContainerStyle,
                     paddingLeft: `${depth * 20 + 10}px`,
@@ -429,7 +459,13 @@ const OrgTreeItem: React.FC<OrgTreeItemProps> = ({ node, depth, expandedIds, sel
                         onMouseEnter={() => setIsHovered(true)}
                         onMouseLeave={() => setIsHovered(false)}
                     >
-                        {node.orgName}
+                        <div style={{ marginLeft: "8px" }}>
+                            {highlightText(node.orgName, highlightTerm)}
+                            {/* 인원수 표시 */}
+                            <span style={{ fontSize: "12px", color: theme.colors.textSecondary, marginLeft: "4px" }}>
+                                ({count})
+                            </span>
+                        </div>
                     </span>
                 </div>
             </div>
@@ -445,7 +481,8 @@ const OrgTreeItem: React.FC<OrgTreeItemProps> = ({ node, depth, expandedIds, sel
                             selectedId={selectedId}
                             onToggle={onToggle}
                             onSelect={onSelect}
-                            isLast={index === node.children.length - 1}
+                            highlightTerm={highlightTerm}
+                            memberCounts={memberCounts} // Prop Drilling
                         />
                     ))}
                 </div>

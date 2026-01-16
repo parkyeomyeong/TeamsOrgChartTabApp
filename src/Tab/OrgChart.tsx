@@ -12,6 +12,7 @@ import { orgList } from "./TempData/orgDummyData";
 import { theme } from "./constants/theme";
 // 이미지 에셋 임포트
 import copyIcon from "../assets/copy.png";
+import { buildOrgTree, calculateTotalCounts, OrgTreeNode } from "./utils/orgTreeUtils"; // calculateTotalCounts 추가
 
 /**
  * Employee 인터페이스
@@ -23,11 +24,12 @@ interface Employee {
   position: string; // 직위 (e.g. 과장, 대리)
   role: string; // 직책 (e.g. 팀장)
   department: string; // 부서명
-  orgFullName: string; // [New] 조직 전체 경로명 (예: 아성다이소 > 인사본부 > 인사총무부)
-  orgId: string; // [New] 부서 ID (트리 연동용)
+  orgFullName: string; // 조직 전체 경로명 (예: 아성다이소 > 인사본부 > 인사총무부)
+  orgId: string; // 부서 ID (트리 연동용)
   extension: string; // 내선 번호
   mobile: string; // 휴대폰 번호
   email: string; // 이메일 주소
+  companyName: string; // 회사명 (e.g. 아성다이소)
 }
 
 /**
@@ -47,6 +49,9 @@ export default function OrgChart() {
 
   // 3. 현재 왼쪽 트리에서 선택된 조직(부서) 정보
   const [currentOrg, setCurrentOrg] = useState<OrgData | null>(null);
+
+  // 트리 데이터 State (인원수 계산을 위해 필요)
+  const [treeData, setTreeData] = useState<OrgData[]>([]);
 
   // 4. 선택된 Org ID 관리
   const [selectedOrgId, setSelectedOrgId] = useState<string>("");
@@ -89,10 +94,29 @@ export default function OrgChart() {
   const userPhotos: { [email: string]: string } = {};
 
   // --- Memos ---
-  // [Optimization] orgList 검색 성능을 위해 Map으로 변환 (O(1) Lookup)
+  // orgList 검색 성능을 위해 Map으로 변환 (O(1) Lookup)
   const orgMap = useMemo(() => {
     return new Map(orgList.map(org => [org.orgId, org]));
+    return new Map(orgList.map(org => [org.orgId, org]));
   }, []);
+
+  // 부서별 인원수 계산 (Bottom-up Recursive Aggregation)
+  const memberCountMapForOrgTree = useMemo(() => {
+    // 1. 직속 직원 수 계산 (Direct Counts)
+    const directCounts = new Map<string, number>();
+    empList.forEach(emp => {
+      const current = directCounts.get(emp.orgId) || 0;
+      directCounts.set(emp.orgId, current + 1);
+    });
+
+    // 2. 트리 구조를 순회하며 하위 부서 인원 누적
+    if (treeData.length > 0) {
+      // treeData는 OrgData[]로 정의되어 있지만 실질적으로는 children을 포함한 OrgTreeNode[] 구조임.
+      // 따라서 타입 단언(Assertion)을 사용하여 타입을 맞춰줌.
+      return calculateTotalCounts(treeData as OrgTreeNode[], directCounts);
+    }
+    return new Map<string, number>();
+  }, [treeData, empList]); // 트리나 직원 목록 변경 시 재계산
 
   // --- Helper Functions ---
 
@@ -115,6 +139,7 @@ export default function OrgChart() {
         extension: emp.offcTelNo || "-",
         mobile: emp.moblTelNo || "-",
         email: emp.emailAddr,
+        companyName: emp.compCd === "AD" ? "아성다이소" : emp.compCd === "AS" ? "아성" : emp.compCd === "AH" ? "아성HMP" : emp.compCd, // 회사코드 매핑인데 이건 나중에 DB에서 회사이름으로 바로 받아오게 변경할 예정
       }));
     setUsers(filtered);
   };
@@ -132,9 +157,14 @@ export default function OrgChart() {
       } catch (e) { console.error("Failed to load saved state", e); }
     }
 
+    // 맨
+
+    // 초기 트리 구성
+    const tree = buildOrgTree(orgList);
+    setTreeData(tree); // 트리 데이터 저장 (인원수 계산용)
+
     // SSO 시뮬레이션: "박여명" (또는 "14636" HR/DMS시스템팀) 설정
-    // SSO 시뮬레이션: "박여명" (또는 "14636" HR/DMS시스템팀) 설정
-    const targetOrgId = "14636";
+    const targetOrgId = "14636"; // "박여명" 사용자의 부서(orgId: 14636)로 초기 선택 설정
 
     setSelectedOrgId(targetOrgId);
 
@@ -268,6 +298,7 @@ export default function OrgChart() {
       mobile: emp.moblTelNo || "-",
       email: emp.emailAddr,
       orgId: emp.orgId,
+      companyName: emp.compCd === "AD" ? "아성다이소" : emp.compCd === "AS" ? "아성" : emp.compCd === "AH" ? "아성HMP" : emp.compCd, // 회사코드 매핑인데 이건 나중에 DB에서 회사이름으로 바로 받아오게 변경할 예정
     }));
 
     setUsers(filtered);
@@ -331,12 +362,15 @@ export default function OrgChart() {
 
   const handleRowClick = (emp: Employee) => {
     setSelectedUser(emp);
-    // [New] 해당 사용자의 소속 부서를 트리에 반영 (전체 접고 해당 경로만 펼침)
+    // 해당 사용자의 소속 부서를 트리에 반영 (전체 접고 해당 경로만 펼침)
     setSelectedOrgId(emp.orgId);
   };
 
   const openDeepLink = (type: 'chat' | 'call' | 'meeting' | 'mail', targetUsers?: string[]) => {
-    if (!targetUsers || targetUsers.length === 0) return;
+    if (!targetUsers || targetUsers.length === 0) {
+      setToastMessage("선택된 사용자가 없습니다.");
+      return;
+    }
     const rawUserString = targetUsers.join(',');
 
     let url = "";
@@ -445,7 +479,8 @@ export default function OrgChart() {
             onSelectOrg={handleOrgSelect}
             selectedOrgId={selectedOrgId}
             onSearch={handleSearch}
-            orgMap={orgMap} // [Optimization] 부모 컴포넌트에서 만든 Map 전달
+            orgMap={orgMap}
+            memberCounts={memberCountMapForOrgTree} // 인원수 Map 전달
           />
         </div>
       </div>
@@ -657,11 +692,23 @@ export default function OrgChart() {
                     <span style={{ fontSize: "14px", color: "#605e5c" }}>{selectedUser.position}</span>
                   </div>
                   <div style={{ fontSize: "14px", color: "#605e5c" }}>
-                    <strong>아성 다이소</strong> | {selectedUser.department} | {selectedUser.role}
+                    <strong>{selectedUser.companyName}</strong> | {selectedUser.department} | {selectedUser.role}
                   </div>
-                  {/* [New] 전체 부서 경로 표시 */}
-                  <div style={{ fontSize: "13px", color: "#a19f9d" }}>
-                    {selectedUser.orgFullName}
+                  {/* 전체 부서 경로 표시 (긴 경우 말줄임표) */}
+                  <div
+                    style={{
+                      fontSize: "13px",
+                      color: "#a19f9d",
+                      marginTop: "4px",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      maxWidth: "400px",
+                      display: "block"
+                    }}
+                    title={selectedUser.orgFullName.replace(/ /g, " > ")}
+                  >
+                    {selectedUser.orgFullName.replace(/ /g, " > ")}
                   </div>
                   <div style={{ fontSize: "13px", color: "#a19f9d" }}>담당업무 : 전산직</div>
                 </div>
