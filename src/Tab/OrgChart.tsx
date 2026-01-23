@@ -7,8 +7,9 @@ import { OrgTreeView } from "./components/OrgTree";
 import { Toast } from "./components/Toast";
 import { Spinner } from "./components/Spinner";
 import { useOrgChartData } from "./hooks/useOrgChartData"; // API Hook
-import { Employee, OrgData, OrgTreeNode } from "./types"; // Centralized Types
-import { getAllDescendantIds, buildOrgTree, calculateTotalCounts } from "./utils/orgTreeUtils";
+import { Employee, OrgData, OrgTreeNode } from "./types"; // 공통 타입
+import { getAllDescendantIds, buildOrgTree, calculateTotalCounts, getAllAncestorIds } from "./utils/orgTreeUtils";
+import { getCache, setCache } from "./utils/storageUtils"; // 캐시 유틸리티 import
 import { theme } from "./constants/theme";
 // 이미지 에셋 임포트
 import copyIcon from "../assets/copy.png";
@@ -23,25 +24,29 @@ import { useTeamsAuth } from "./hooks/useTeamsAuth";
 export default function OrgChart() {
   // const { themeString } = useContext(TeamsFxContext);
 
-  // SSO Token (One-time fetch)
-  const { token } = useTeamsAuth();
+  // SSO 토큰 (1회성 호출)
+  const { token, currentUserEmail, isAuthLoading } = useTeamsAuth();
 
-  // --- API Data Fetching ---
-  const { data, isLoading: isApiLoading, error } = useOrgChartData(token); // 맨 처음 SSO 인증 + 조직정보 + 직원정보 가져오는 출발 훅 
+  // --- API 데이터 조회 ---
+  const { data, isLoading: isApiLoading } = useOrgChartData(token); // 맨 처음 SSO 인증 + 조직정보 + 직원정보 가져오는 출발 훅 
   const orgList = data?.orgList || [];
   const empList = data?.empList || [];
 
   // --- State 관리 영역 ---
 
+  // 0. View Mode (BROWSE | SEARCH)
+  const [viewMode, setViewMode] = useState<'BROWSE' | 'SEARCH'>('BROWSE');
+
   // 1. 중앙 그리드에 표시될 사용자 목록
   const [users, setUsers] = useState<Employee[]>([]);
 
   // 1.1 현재 표시된 사용자의 이메일 목록 추출 (Presence 조회를 위해)
-  const userEmails = useMemo(() => users.map(u => u.email).filter(Boolean), [users]);
+  // [변수명 변경] userEmails -> gridUserEmails
+  const gridUserEmails = useMemo(() => users.map(u => u.email).filter(Boolean), [users]);
 
-  // --- Custom Hooks ---
+  // --- 커스텀 훅 (Custom Hooks) ---
   // Presence Hook 사용
-  const { presenceMap } = useUserPresence(userEmails, token);
+  const { presenceMap } = useUserPresence(gridUserEmails, token);
   const userPhotos: { [email: string]: string } = {}; // 나중에 구현 예정
 
   // 2. 팝업(상세 정보)에 표시할 선택된 사용자
@@ -56,6 +61,20 @@ export default function OrgChart() {
   // 4. 선택된 Org ID 관리
   const [selectedOrgId, setSelectedOrgId] = useState<string>("");
 
+  // [새로운] OrgTree에서 상태 끌어올리기 (State Lifted)
+  const [companyCode, setCompanyCode] = useState("AD");
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  // 트리 검색 상태
+  const [treeSearchTerm, setTreeSearchTerm] = useState("");
+  const [treeSearchCategory, setTreeSearchCategory] = useState("user");
+  const [activeTreeSearchTerm, setActiveTreeSearchTerm] = useState("");
+
+  // 그리드 검색 상태 (검색 결과 복원용)
+  const [gridSearchTerm, setGridSearchTerm] = useState("");
+  const [gridSearchCategory, setGridSearchCategory] = useState("user");
+
+
   // 4. 중앙 그리드에서 체크박스로 선택된 사용자의 ID 집합 (-> 우측 패널로 이동됨)
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
 
@@ -66,8 +85,8 @@ export default function OrgChart() {
   const [sidebarWidth, setSidebarWidth] = useState(320); // 기본 너비 220px
   const [isResizing, setIsResizing] = useState(false);
 
-  // 7. 검색 모드 상태
-  const [isSearchMode, setIsSearchMode] = useState(false);
+  // 7. 검색 모드 상태 (viewMode로 대체될 예정이나 하위 호환을 위해 유지하거나 viewMode derived로 변경)
+  const isSearchMode = viewMode === 'SEARCH';
 
   // 8. Toast 상태
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -75,14 +94,14 @@ export default function OrgChart() {
   // 9. Bottom Panel 자동 스크롤을 위한 Ref
   const bottomPanelRef = useRef<HTMLDivElement>(null);
 
-  // 10. 로딩 상태 (내부 처리용 + API 로딩)
+  // 10. 로딩 상태 (내부 처리용 + API 로딩 + 인증 로딩)
   const [isProcessing, setIsProcessing] = useState(false);
-  const isLoading = isApiLoading || isProcessing;
+  const isLoading = isApiLoading || isProcessing || isAuthLoading;
 
   // 11. 컨테이너 간 정확한 리사이즈 계산을 위해 메인 컨테이너 Ref
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // --- Memos ---
+  // --- 메모이제이션 (Memos) ---
 
   // orgList 검색 성능을 위해 Map으로 변환 (O(1) Lookup)
   const orgMap = useMemo(() => {
@@ -96,9 +115,6 @@ export default function OrgChart() {
     // 1. 직속 직원 수 계산 (Direct Counts)
     const directCounts = new Map<string, number>();
     empList.forEach((emp: Employee) => {
-      // emp.orgId 매핑 확인 필요. 
-      // 만약 백엔드 Employee의 orgId 필드명이 'deptCode' 등으로 다르다면 여기서 맞춰줘야 함.
-      // 현재는 types.ts의 Employee 인터페이스에 orgId가 있다고 가정.
       const current = directCounts.get(emp.orgId) || 0;
       directCounts.set(emp.orgId, current + 1);
     });
@@ -110,7 +126,7 @@ export default function OrgChart() {
     return new Map<string, number>();
   }, [treeData, empList, orgList]); // 데이터 변경 시 재계산
 
-  // --- Helper Functions ---
+  // --- 헬퍼 함수 (Helper Functions) ---
 
   // 부서 선택 시 해당 부서 및 하위 부서의 모든 임직원 목록 가져오기
   const updateEmployeeList = (orgId: string) => {
@@ -123,61 +139,168 @@ export default function OrgChart() {
       .map((emp) => ({
         ...emp, // 이미 API에서 Employee 형태로 받아왔다고 가정
         orgFullName: orgMap.get(emp.orgId)?.orgFullName || "-",
-        companyName: emp.companyName || (emp.orgId.startsWith("AD") ? "아성다이소" : "아성"), // 회사명 fallback 로직 필요 시 유지
+        companyName: emp.companyName || (emp.orgId.startsWith("AD") ? "아성다이소" : "아성"), // 회사명 폴백 로직 필요 시 유지
       }));
     setUsers(filtered);
   };
 
-  // --- Effects ---
+  // --- 이펙트 (Effects) ---
 
-  // 1. API 데이터 로드 후 초기화
+  // 1. API 데이터 로드 후 초기화 및 상태 복원 (State Restoration)
   useEffect(() => {
     if (!isLoading && data) {
-      // 초기 트리 구성
+      // 초기 트리 구성 (메모리 내 트리 구조용)
       const tree = buildOrgTree(orgList);
       setTreeData(tree);
 
-      // LocalStorage 복원
-      const saved = localStorage.getItem("orgChartCheckedIds");
-      if (saved) {
+      // --- 상태 복원 로직 ---
+      const savedState = getCache<any>("orgChartUserState");
+      let restored = false;
+
+      if (savedState) {
         try {
-          const ids = JSON.parse(saved);
-          setCheckedIds(new Set(ids));
-        } catch (e) { console.error("Failed to load saved state", e); }
+
+
+
+          // 1. 공통 상태 복원
+          if (savedState.companyCode) setCompanyCode(savedState.companyCode);
+          if (savedState.expandedIds) setExpandedIds(new Set(savedState.expandedIds));
+          if (savedState.sidebarWidth) setSidebarWidth(savedState.sidebarWidth);
+          if (savedState.checkedIds) setCheckedIds(new Set(savedState.checkedIds));
+
+          // 트리 검색 상태
+          if (savedState.treeSearch) {
+            setTreeSearchTerm(savedState.treeSearch.term || "");
+            setTreeSearchCategory(savedState.treeSearch.category || "user");
+            setActiveTreeSearchTerm(savedState.treeSearch.activeTerm || "");
+          }
+
+          // 2. 모드별 복원
+          if (savedState.viewMode === 'SEARCH') {
+            // 검색 모드 복원
+            setViewMode('SEARCH');
+            const sTerm = savedState.search?.term || "";
+            const sCat = savedState.search?.category || "user";
+
+            setGridSearchTerm(sTerm);
+            setGridSearchCategory(sCat);
+
+            // Trigger Search immediately
+            if (sTerm) {
+              // Duplicate Search Logic (Should be extracted but doing inline for now to access closures)
+              const lowerTerm = sTerm.toLowerCase();
+              const filtered = empList.filter((emp: Employee) => {
+                let value = "";
+                switch (sCat) {
+                  case 'user': value = emp.name; break;
+                  case 'extension': value = emp.extension; break;
+                  case 'mobile': value = emp.mobile; break;
+                  case 'position': value = emp.position; break;
+                  case 'jobTitle': value = emp.role; break;
+                  default: return false;
+                }
+                return value && String(value).toLowerCase().includes(lowerTerm);
+              });
+              setUsers(filtered);
+            }
+            restored = true;
+
+          } else {
+            // 탐색(BROWSE) 모드 복원 (기본값)
+            setViewMode('BROWSE');
+            const targetOrgId = savedState.selectedOrgId;
+
+            // Validate OrgId
+            if (targetOrgId && orgMap.has(targetOrgId)) {
+              setSelectedOrgId(targetOrgId);
+              const orgInfo = orgMap.get(targetOrgId);
+              if (orgInfo) setCurrentOrg(orgInfo);
+              updateEmployeeList(targetOrgId);
+              restored = true;
+            }
+          }
+
+        } catch (e) { console.error("Failed to restore state", e); }
       }
 
-      // 초기 선택 부서 설정 
-      // "박여명" (또는 "14636" HR/DMS시스템팀) 설정 로직 유지
-      // 실제 운영 환경에서는 로그인한 사용자의 부서 정보를 받아와야 함
-      const targetOrgId = "14636";
+      // 대체 로직: 복원되지 않았을 경우 (첫 로드 또는 캐시 무효), 기본값 설정
+      if (!restored) {
+        // [수정] '내 조직' 우선 선택 로직
+        let defaultOrgId = "14636"; // 기본값 (인사총무팀)
 
-      // 데이터가 존재하는지 확인 후 설정
-      if (orgMap.has(targetOrgId)) {
-        setSelectedOrgId(targetOrgId);
-        updateEmployeeList(targetOrgId);
+        // 1. 로그인한 사용자 찾기
+        if (currentUserEmail) {
+          const me = empList.find(e => e.email.toLowerCase() === currentUserEmail.toLowerCase());
+          if (me && orgMap.has(me.orgId)) {
+            defaultOrgId = me.orgId;
+            // 회사 코드도 내 회사로 변경
+            const myOrg = orgMap.get(me.orgId);
+            if (myOrg && myOrg.companyCode) {
+              setCompanyCode(myOrg.companyCode);
+            } else if (me.companyName) {
+              if (me.companyName.includes("아성다이소")) setCompanyCode("AD");
+              else if (me.companyName.includes("HMP")) setCompanyCode("AH");
+              else if (me.companyName === "아성") setCompanyCode("AS");
+            }
+          }
+        }
 
-        const orgInfo = orgList.find(o => o.orgId === targetOrgId);
-        if (orgInfo) setCurrentOrg(orgInfo);
-      } else {
-        // 타겟 부서가 없으면 최상위 루트 선택 등 fallback 처리
-        if (tree.length > 0) {
+        if (orgMap.has(defaultOrgId)) {
+          setSelectedOrgId(defaultOrgId);
+          updateEmployeeList(defaultOrgId);
+          const orgInfo = orgMap.get(defaultOrgId);
+          if (orgInfo) setCurrentOrg(orgInfo);
+
+          // [수정] 선택된 부서의 상위 경로 모두 펼치기 (getAllAncestorIds 사용)
+          const ancestors = getAllAncestorIds(defaultOrgId, orgList);
+          setExpandedIds(ancestors);
+
+        } else if (tree.length > 0) {
           const rootId = tree[0].orgId;
           setSelectedOrgId(rootId);
           updateEmployeeList(rootId);
           setCurrentOrg(tree[0]);
+
+          // 루트 노드 확장
+          setExpandedIds(new Set([rootId]));
         }
       }
+
     }
-  }, [data, isLoading, orgList, empList, orgMap]); // 데이터가 준비되면 실행
+  }, [data, isLoading, currentUserEmail]); // currentUserEmail dependency 추가
 
-  // 2. 상태 저장
-
+  // 2. 상태 저장 (Save State on Change)
   useEffect(() => {
-    // 체크된 사용자 목록이 변경될 때마다 LocalStorage에 저장
-    localStorage.setItem("orgChartCheckedIds", JSON.stringify(Array.from(checkedIds)));
-  }, [checkedIds]);
+    //로딩중이거나 데이터 없으면 캐시 저장 X
+    if (isLoading || !data) return;
 
-  // 3. 사이드바 리사이징 이벤트 리스너
+    const stateToSave = {
+      viewMode,
+      companyCode,
+      selectedOrgId,
+      expandedIds: Array.from(expandedIds),
+      checkedIds: Array.from(checkedIds),
+      sidebarWidth,
+      search: {
+        term: gridSearchTerm,
+        category: gridSearchCategory
+      },
+      treeSearch: {
+        term: treeSearchTerm,
+        category: treeSearchCategory,
+        activeTerm: activeTreeSearchTerm
+      },
+      timestamp: Date.now()
+    };
+
+    // [수정] setCache 사용
+    setCache("orgChartUserState", stateToSave);
+
+    console.log("캐시 저장됨", stateToSave);
+
+  }, [viewMode, companyCode, selectedOrgId, expandedIds, checkedIds, sidebarWidth, gridSearchTerm, gridSearchCategory, treeSearchTerm, treeSearchCategory, activeTreeSearchTerm, isLoading, data]);
+
+  // 3. 사이드바 리사이징 이벤트 리스너 (Existing Logic)
   const resizeStart = useRef<{ x: number, w: number }>({ x: 0, w: 0 });
 
   const startResizing = useCallback((e: React.MouseEvent) => {
@@ -218,7 +341,7 @@ export default function OrgChart() {
     };
   }, [isResizing, resize, stopResizing]);
 
-  // 4. 선택된 대화상대 추가 시 오른쪽으로 자동 스크롤
+  // 4. 선택된 대화상대 추가 시 오른쪽으로 자동 스크롤 (Existing Logic)
   const prevCheckedSize = useRef(0);
   useEffect(() => {
     if (checkedIds.size > prevCheckedSize.current) {
@@ -231,29 +354,49 @@ export default function OrgChart() {
   }, [checkedIds]);
 
 
-  // --- Event Handlers ---
+  // --- 이벤트 핸들러 (Event Handlers) ---
 
   // 5. 왼쪽 트리에서 조직 선택 시 해당 조직의 직원 목록을 가져오며 로딩 스피너 표시
   const handleOrgSelect = (org: OrgData) => {
-    setIsProcessing(true); // 로딩 시작
+    setIsProcessing(true);
 
-    // 실제 데이터 로딩 (비동기 시 await 필요하지만 현재는 동기 처리)
     setCurrentOrg(org);
     setSelectedOrgId(org.orgId);
-    setIsSearchMode(false);
-    console.log("Selected Org:", org);
+
+    // 탐색 모드로 전환
+    setViewMode('BROWSE');
+
+    console.log("선택된 부서:", org);
     updateEmployeeList(org.orgId);
 
-    setIsProcessing(false); // 로딩 종료
+    setIsProcessing(false);
+  };
+
+  // 회사 변경 핸들러
+  const handleCompanyChange = (code: string) => {
+    setCompanyCode(code);
+
+    // 회사 변경 시 해당 회사의 루트 노드들을 기본적으로 펼침
+    const relevantTree = buildOrgTree(orgList, code === 'ALL' ? undefined : code);
+    const rootIds = relevantTree.map(node => node.orgId);
+    setExpandedIds(new Set(rootIds));
+
+    // 선택 초기화
+    setSelectedOrgId("");
+    setCurrentOrg(null);
+    setUsers([]); // 그리드 초기화
   };
 
   const handleSearch = (category: string, term: string) => {
-    // 검색어가 없으면 현재 선택된 부서 기준으로 다시 로드 (이부분은 그냥 검색어 없으면 아무것도 안하도록 할까 고민중)
+    // 검색 상태 저장
+    setGridSearchTerm(term);
+    setGridSearchCategory(category);
+
     if (!term) {
-      setIsSearchMode(false);
+      // 검색어가 비어있으면 탐색 모드로 복귀
       if (selectedOrgId) {
+        setViewMode('BROWSE');
         updateEmployeeList(selectedOrgId);
-        // 복구: 현재 선택된 Org 정보를 다시 currentOrg에 세팅해야 함
         const orgInfo = orgList.find(o => o.orgId === selectedOrgId);
         if (orgInfo) setCurrentOrg(orgInfo);
       } else {
@@ -283,7 +426,9 @@ export default function OrgChart() {
 
     setUsers(filtered);
     setCurrentOrg(null);
-    setIsSearchMode(true);
+
+    // 검색 모드로 전환
+    setViewMode('SEARCH');
 
     setIsProcessing(false);
   };
@@ -370,7 +515,7 @@ export default function OrgChart() {
     }
 
     if (url) {
-      app.openLink(url).catch((err) => {
+      app.openLink(url).catch(() => {
         window.open(url, '_blank');
       });
     }
@@ -446,13 +591,25 @@ export default function OrgChart() {
 
           <div style={{ flex: 1, overflow: "auto" }}>
             {/* OrgTreeView 컴포넌트를 사용하여 조직 계층 구조 표시 */}
+            {/* OrgTreeView 컴포넌트를 사용하여 조직 계층 구조 표시 */}
             <OrgTreeView
               onSelectOrg={handleOrgSelect}
               selectedOrgId={selectedOrgId}
               onSearch={handleSearch}
-              orgMap={orgMap}
               memberCounts={memberCountMapForOrgTree} // 인원수 Map 전달
               orgList={orgList} // 데이터 전달
+
+              // [새로운] 끌어올려진 상태 Props
+              companyCode={companyCode}
+              onCompanyChange={handleCompanyChange}
+              expandedIds={expandedIds}
+              onExpandChange={setExpandedIds}
+              searchTerm={treeSearchTerm}
+              onSearchTermChange={setTreeSearchTerm}
+              searchCategory={treeSearchCategory}
+              onSearchCategoryChange={setTreeSearchCategory}
+              activeSearchTerm={activeTreeSearchTerm}
+              onActiveSearchTermChange={setActiveTreeSearchTerm}
             />
           </div>
         </div>

@@ -149,10 +149,33 @@ const SEARCH_CATEGORIES = [
 export interface OrgTreeViewProps {
     onSelectOrg: (org: OrgData) => void;
     selectedOrgId?: string;
+    // 충돌 시 여기서 onSearch를 제거하지만, 검색 트리거가 필요합니다.
+    onSearchTrigger?: (category: string, term: string) => void; // 필요한 경우 부모의 메인 검색(그리드) 또는 트리 검색용?
+    // 그리드(전역 검색)에 대한 부모의 검색 핸들러는 onSearch입니다.
+    // 하지만 여기에는 트리 검색(하이라이트)도 있습니다.
+    // "전역 검색"(임직원 그리드 업데이트)의 트리거로 onSearch를 유지합시다.
     onSearch?: (category: string, term: string) => void;
-    orgMap?: Map<string, OrgData>; // O(1) 조회를 위한 Map
-    memberCounts?: Map<string, number>; // 부서원 수
-    orgList: OrgData[]; // [NEW] 트리 구성용 데이터 (부모로부터 전달받음)
+
+
+    memberCounts?: Map<string, number>;
+    orgList: OrgData[];
+
+    // [제어 컴포넌트를 위한 새로운 Props]
+    companyCode: string;
+    onCompanyChange: (code: string) => void;
+
+    expandedIds: Set<string>;
+    onExpandChange: (ids: Set<string>) => void;
+
+    // 트리 검색 Props (트리 내 시각적 필터링)
+    searchTerm: string;
+    onSearchTermChange: (term: string) => void;
+    searchCategory: string;
+    onSearchCategoryChange: (category: string) => void;
+
+    // 트리 노드 필터링을 위한 활성 검색어
+    activeSearchTerm: string;
+    onActiveSearchTermChange: (term: string) => void;
 }
 
 // 왼쪽 조직도 전체 컴포넌트 (검색, 조직도 맵)
@@ -160,16 +183,20 @@ export const OrgTreeView: React.FC<OrgTreeViewProps> = ({
     onSelectOrg,
     selectedOrgId,
     onSearch,
-    orgMap,
     memberCounts,
-    orgList // [NEW]
+    orgList,
+    companyCode,
+    onCompanyChange,
+    expandedIds,
+    onExpandChange,
+    searchTerm,
+    onSearchTermChange,
+    searchCategory,
+    onSearchCategoryChange,
+    activeSearchTerm,
+    onActiveSearchTermChange
 }) => {
     const [data, setData] = useState<OrgTreeNode[]>([]);
-    const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set()); // 펼쳐진 부서 ID 목록
-    const [searchTerm, setSearchTerm] = useState(""); // 검색어
-    const [activeSearchTerm, setActiveSearchTerm] = useState(""); // 실제 검색에 사용되는 검색어
-    const [searchCategory, setSearchCategory] = useState("user"); // 검색 카테고리
-    const [companyCode, setCompanyCode] = useState("AD"); // 회사 코드
 
     // 데이터 로드 (회사 코드 변경 시)
     useEffect(() => {
@@ -178,64 +205,25 @@ export const OrgTreeView: React.FC<OrgTreeViewProps> = ({
         const tree: OrgTreeNode[] = buildOrgTree(orgList, companyCode === 'ALL' ? undefined : companyCode);
         setData(tree);
 
-        // 기본적으로 1레벨(루트) 확장
-        const newExpanded = new Set<string>();
-        tree.forEach(root => {
-            newExpanded.add(root.orgId);
-        });
-        setExpandedIds(newExpanded);
-    }, [companyCode, orgList]); // orgList 의존성 추가
+        // [참고] 초기 확장 로직은 부모 컴포넌트에서 담당하거나, 여기서 데이터 변경 시에만 제한적으로 수행합니다.
+        // State Lifting(상태 끌어올리기)의 목적에 따라, 데이터가 변경되었을 때 트리를 다시 그리는 것은 맞지만,
+        // '어떤 노드를 펼칠지'는 부모의 State(expandedIds)가 결정합니다.
+        // 단, 회사 코드가 변경되었을 때 "루트 노드 자동 펼침" 같은 편의 기능은 여기서 수행해도 됩니다.
+        // 하지만 복원 로직과 충돌하지 않도록 주의해야 합니다.
+        // -> 복원 시에는 expandedIds가 이미 채워져서 전달될 것입니다.
+        // -> 따라서 여기서는 "데이터 변경 시 expandedIds가 비어있다면 루트만 펼친다" 정도로 타협하거나
+        // -> 아예 부모 컴포넌트가 데이터 로드 시점에 결정하도록 위임하는 것이 가장 깔끔합니다.
+        // -> 우선 여기서는 Data(트리 구조)만 갱신합니다.
 
-    // 마운트 시 저장된 펼침 상태 불러오기
-    useEffect(() => {
-        const saved = localStorage.getItem("orgTree_expandedIds");
-        if (saved) {
-            try {
-                const idsArray = JSON.parse(saved);
-                setExpandedIds(new Set(idsArray));
-            } catch (e) { console.error(e); }
-        }
-    }, []);
+    }, [companyCode, orgList]);
 
-    // 펼침 상태가 바뀔 때마다 저장
-    useEffect(() => {
-        if (expandedIds.size > 0) {
-            const idsArray = Array.from(expandedIds);
-            localStorage.setItem("orgTree_expandedIds", JSON.stringify(idsArray));
-        }
-    }, [expandedIds]);
+    // [삭제됨] LocalStorage 로직 (부모 컴포넌트에서 지속성 처리)
 
-    // 선택된 조직 자동 확장
-    useEffect(() => {
-        if (!selectedOrgId) return;
-
-        setExpandedIds(prev => {
-            // 기존 펼침 상태 유지
-            const nextExpanded = new Set<string>(prev);
-            let currentId = selectedOrgId;
-            let safety = 0;
-
-            // 부모 경로를 찾아 확장 목록에 추가
-            while (currentId && safety < 100) {
-                // Map이 있으면 O(1), 없으면 O(N)
-                const node = orgMap ? orgMap.get(currentId) : orgList.find(o => o.orgId === currentId);
-
-                if (node && node.parentId) {
-                    nextExpanded.add(node.parentId);
-                    currentId = node.parentId;
-                } else {
-                    break;
-                }
-                safety++; //안전장치...! 무한루프 돌면 안되니까 
-            }
-            return nextExpanded;
-        });
-    }, [selectedOrgId]);
-
-    // 선택된 조직으로 자동 스크롤
+    // [삭제됨] 현재 선택 항목 자동 확장 로직 (부모 컴포넌트가 expandedIds prop을 통해 처리)
+    // [삭제됨] 자동 스크롤 로직 (부모 컴포넌트로 이동 또는 유지?)
+    // 자동 스크롤은 DOM ID에 의해 작동하므로, 선택 prop에 기반한 순수 UI 효과로서 여기 유지하는 것이 좋습니다.
     useEffect(() => {
         if (selectedOrgId) {
-            // 트리 확장이 반영된 후 스크롤하기 위해 약간의 지연 시간 부여
             setTimeout(() => {
                 const element = document.getElementById(`org-node-${selectedOrgId}`);
                 if (element) {
@@ -248,9 +236,9 @@ export const OrgTreeView: React.FC<OrgTreeViewProps> = ({
     // 검색 트리거 (엔터 또는 버튼 클릭 시)
     const triggerSearch = () => {
         const term = searchTerm.trim();
-        setActiveSearchTerm(term);
+        onActiveSearchTermChange(term); // 부모의 활성 검색어 업데이트
 
-        // 부서 외 검색이면 이벤트 전달
+        // 부서 검색이 아니면 이벤트 전달 (메인 그리드 검색)
         if (searchCategory !== 'dept') {
             if (onSearch) {
                 onSearch(searchCategory, term);
@@ -264,12 +252,12 @@ export const OrgTreeView: React.FC<OrgTreeViewProps> = ({
         }
     };
 
-    // 검색 필터링 (부서명인 경우 우측에 표시되는 임직원 목록이 아닌 조직도 맵에 찾는 부서가 포함된 트리만 표시)
+    // 검색 필터링 (부서명인 경우, 우측에 표시되는 임직원 목록이 아닌 조직도 맵에 찾는 부서가 포함된 트리만 표시)
     const filteredTree = useMemo(() => {
         if (searchCategory === 'dept' && activeSearchTerm) {
             return filterTree(data, activeSearchTerm, ['orgName', 'orgId']);
         }
-        return data; // 다른 카테고리일 때는 전체 트리 표시 (필터링 안함)
+        return data;
     }, [data, activeSearchTerm, searchCategory]);
 
     // 노드 토글
@@ -280,33 +268,39 @@ export const OrgTreeView: React.FC<OrgTreeViewProps> = ({
         } else {
             newExpanded.add(node.orgId);
         }
-        setExpandedIds(newExpanded);
+        onExpandChange(newExpanded);
     };
 
     // 선택
     const handleSelect = (node: OrgTreeNode) => {
+        // 부서 선택 시 "검색 모드"가 아니면(또는 부서 검색 중이면) 해당 경로를 펼칠지 여부?
+        // 부모 컴포넌트가 onSelectOrg 내부에서 처리하거나, 여기서 처리해서 전달할 수 있습니다.
+        // 부모 컴포넌트가 로직을 취합하는 것이 좋습니다.
         onSelectOrg(node);
     };
 
     const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setSearchTerm(e.target.value);
+        onSearchTermChange(e.target.value);
     };
 
-    // 검색 시 자동 펼침/초기화 (activeSearchTerm 기준)
+    // [삭제됨] 검색 시 자동 확장 (부모/Effect 로직)
+    // 하지만 필터링된 트리가 변경되었을 때 "모두 펼치기"는 UI 로직에 가깝습니다.
+    // filteredTree가 변할 때 -> expandedIds 업데이트
+    // 이것도 부모 컴포넌트로 올릴 수 있지만, filteredTree가 여기서 계산되므로
+    // 여기서 계산된 ID들을 부모로 올려주는 Effect를 사용합니다.
     useEffect(() => {
         if (searchCategory === 'dept') {
             if (activeSearchTerm) {
-                setExpandedIds(getAllIds(filteredTree));
+                onExpandChange(getAllIds(filteredTree));
             } else {
-                // 초기화 시 1레벨만
-                const initialExpanded = new Set<string>();
-                data.forEach(root => {
-                    initialExpanded.add(root.orgId);
-                });
-                setExpandedIds(initialExpanded);
+                // 검색어가 지워지면? -> 초기화 또는 유지? 
+                // 기존 로직: 초기화 (루트만)
+                // 부모 State 변경
+                // 복원 시나리오 고려: 검색어 있는 상태로 로드 -> filteredTree 계산됨 -> 이 Effect 발동 -> 모두 펼쳐짐 (OK)
             }
         }
-    }, [activeSearchTerm, filteredTree, searchCategory, data]);
+    }, [activeSearchTerm, filteredTree, searchCategory]); // data 의존성 제외 (무한루프 주의)
+
 
     return (
         <div style={treeContainerStyle}>
@@ -317,10 +311,10 @@ export const OrgTreeView: React.FC<OrgTreeViewProps> = ({
                 <select
                     style={companySelectStyle}
                     value={companyCode}
-                    onChange={(e) => setCompanyCode(e.target.value)}
+                    onChange={(e) => onCompanyChange(e.target.value)}
                 >
                     <option value="ALL">그룹사 전체</option>
-                    <option value="AD">아성 다이소</option>
+                    <option value="AD">아성다이소</option>
                     <option value="AH">아성HMP</option>
                     <option value="AS">아성</option>
                     <option value="HW">한웰</option>
@@ -333,7 +327,7 @@ export const OrgTreeView: React.FC<OrgTreeViewProps> = ({
                     <select
                         style={searchSelectStyle}
                         value={searchCategory}
-                        onChange={(e) => setSearchCategory(e.target.value)}
+                        onChange={(e) => onSearchCategoryChange(e.target.value)}
                     >
                         {SEARCH_CATEGORIES.map(cat => (
                             <option key={cat.value} value={cat.value}>{cat.label}</option>
@@ -399,7 +393,7 @@ const highlightText = (text: string, term?: string) => {
         <span>
             {parts.map((part, i) =>
                 part.toLowerCase() === term.toLowerCase() ? (
-                    <span key={i} style={{ backgroundColor: theme.colors.borderFocus, fontWeight: 'bold' }}>
+                    <span key={i} style={{ fontWeight: 'bold' }}>
                         {part}
                     </span>
                 ) : (
@@ -428,7 +422,7 @@ const OrgTreeItem: React.FC<OrgTreeItemProps> = ({ node, depth, expandedIds, sel
         onSelect(node);
     };
 
-    // Hover State
+    // Hover 상태
     const [isHovered, setIsHovered] = useState(false);
 
     return (

@@ -8,20 +8,30 @@ import { app, authentication } from "@microsoft/teams-js";
  */
 export const useTeamsAuth = () => {
     const [token, setToken] = useState<string>("");
+    const [currentUserEmail, setCurrentUserEmail] = useState<string>("");
+    const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true); // 인증 로딩 상태 추가
 
     useEffect(() => {
         const getAuthToken = async () => {
             try {
                 // 0. Teams 앱 초기화 보장 (필수)
-                // 토큰 호출 전 확실히 초기화가 완료되어야 함. (팀즈에게 나 준비 됐어! 라고 하는 핸드셰이크 과정이라고 함)
                 await app.initialize();
 
                 // 1. Teams SSO Token 획득
                 const t = await authentication.getAuthToken();
                 console.log("✅ SSO Token Acquired (OBO Prep)");
                 setToken(t);
+
+                // [추가] 사용자 컨텍스트에서 이메일 가져오기
+                const context = await app.getContext();
+                if (context.user && context.user.userPrincipalName) {
+                    setCurrentUserEmail(context.user.userPrincipalName);
+                    // console.log("✅ User Email: " + context.user.userPrincipalName);
+                }
             } catch (err) {
                 console.error("SSO Token Failure:", err);
+            } finally {
+                setIsAuthLoading(false); // 로딩 끝
             }
         };
 
@@ -29,5 +39,5 @@ export const useTeamsAuth = () => {
         // 의존성 배열 [] : 마운트 시 최초 1회만 실행
     }, []);
 
-    return { token };
+    return { token, currentUserEmail, isAuthLoading };
 };

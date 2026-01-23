@@ -174,3 +174,23 @@ export const getAllDescendantIds = (targetOrgId: string, allOrgList: OrgData[]):
 
     return descendants;
 };
+
+/**
+ * 특정 부서(targetOrgId)의 상위 모든 부서 ID 목록을 반환합니다. (본인 포함)
+ * => '내 조직' 선택 시 해당 경로를 트리에서 펼치기 위한 용도
+ */
+export const getAllAncestorIds = (targetOrgId: string, allOrgList: OrgData[]): Set<string> => {
+    const ancestors = new Set<string>();
+    // 검색 효율을 위해 Map 생성 (일회성 호출이므로 매번 생성해도 무방)
+    const orgMap = new Map(allOrgList.map(org => [org.orgId, org]));
+
+    let currentId = targetOrgId;
+    while (currentId && orgMap.has(currentId)) {
+        ancestors.add(currentId);
+        const curr = orgMap.get(currentId);
+        // 부모가 없으면 종료
+        if (!curr || !curr.parentId) break;
+        currentId = curr.parentId;
+    }
+    return ancestors;
+};
