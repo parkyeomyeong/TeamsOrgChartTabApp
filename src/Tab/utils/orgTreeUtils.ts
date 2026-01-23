@@ -1,35 +1,4 @@
-// 임직원 데이터
-export interface empData {
-    empId: string,
-    empNm: string,
-    jobTitleDesc: string,
-    jobTitileCd: string,
-    posisionDesc: string,
-    posisionCd: string,
-    compCd: string,
-    orgId: string,
-    orgNm: string,
-    offcTelNo: string,
-    moblTelNo: string,
-    emailAddr: string
-}
-
-// 조직도 데이터 타입 정의
-export interface OrgData {
-    orgId: string;        // ORG_ID
-    orgName: string;      // ORG_NM
-    orgFullName: string;  // ORG_FULL_NM
-    orgLevel: number;     // ORG_LVL
-    parentId: string; // PARENT_ID (이미지상에 숫자와 'AD'같은 문자가 섞여 있음)
-    sortCode: string;     // SORT_CD
-    companyCode: string;  // COMP_CD (이미지 상 7번째 컬럼으로 추정)
-}
-
-// 트리 노드 인터페이스 정의
-export interface OrgTreeNode extends OrgData {
-    children: OrgTreeNode[];
-    hasChildren: boolean; // UI에서 + 아이콘 표시 여부 판단용
-}
+import { OrgData, OrgTreeNode } from "../types";
 
 /**
  * 평탄한(Flat) 리스트를 트리 구조로 변환합니다.

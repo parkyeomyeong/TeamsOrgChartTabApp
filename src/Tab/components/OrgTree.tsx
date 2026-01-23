@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { OrgTreeNode, buildOrgTree, filterTree, getAllIds } from "../utils/orgTreeUtils";
-import { orgList } from "../TempData/orgDummyData";
-import { OrgData } from "../utils/orgTreeUtils";
+import { buildOrgTree, filterTree, getAllIds } from "../utils/orgTreeUtils";
+import { OrgData, OrgTreeNode } from "../types"; // [Update] Import from centralized types
 import folderIcon from "../../assets/folder_icon.png";
 import { theme } from "../constants/theme";
 
@@ -81,6 +80,8 @@ const searchButtonStyle: React.CSSProperties = {
     alignItems: "center",
     justifyContent: "center",
     color: "#666",
+    width: "24px",
+    height: "24px",
 };
 
 const treeContentStyle: React.CSSProperties = {
@@ -151,6 +152,7 @@ export interface OrgTreeViewProps {
     onSearch?: (category: string, term: string) => void;
     orgMap?: Map<string, OrgData>; // O(1) 조회를 위한 Map
     memberCounts?: Map<string, number>; // 부서원 수
+    orgList: OrgData[]; // [NEW] 트리 구성용 데이터 (부모로부터 전달받음)
 }
 
 // 왼쪽 조직도 전체 컴포넌트 (검색, 조직도 맵)
@@ -159,7 +161,8 @@ export const OrgTreeView: React.FC<OrgTreeViewProps> = ({
     selectedOrgId,
     onSearch,
     orgMap,
-    memberCounts
+    memberCounts,
+    orgList // [NEW]
 }) => {
     const [data, setData] = useState<OrgTreeNode[]>([]);
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set()); // 펼쳐진 부서 ID 목록
@@ -170,6 +173,8 @@ export const OrgTreeView: React.FC<OrgTreeViewProps> = ({
 
     // 데이터 로드 (회사 코드 변경 시)
     useEffect(() => {
+        if (!orgList || orgList.length === 0) return;
+
         const tree: OrgTreeNode[] = buildOrgTree(orgList, companyCode === 'ALL' ? undefined : companyCode);
         setData(tree);
 
@@ -179,7 +184,7 @@ export const OrgTreeView: React.FC<OrgTreeViewProps> = ({
             newExpanded.add(root.orgId);
         });
         setExpandedIds(newExpanded);
-    }, [companyCode]);
+    }, [companyCode, orgList]); // orgList 의존성 추가
 
     // 마운트 시 저장된 펼침 상태 불러오기
     useEffect(() => {

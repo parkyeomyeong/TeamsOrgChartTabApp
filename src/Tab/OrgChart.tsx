@@ -5,32 +5,12 @@ import { AvatarWithStatus } from "./components/StatusAvatar";
 import { OrgTreeView } from "./components/OrgTree";
 import { Toast } from "./components/Toast";
 import { Spinner } from "./components/Spinner";
-import { useTeamsAuth } from "./hooks/useTeamsAuth";
-import { OrgData, getAllDescendantIds } from "./utils/orgTreeUtils";
-import { empList } from "./TempData/empDummyData";
-import { orgList } from "./TempData/orgDummyData";
+import { useOrgChartData } from "./hooks/useOrgChartData"; // [NEW] API Hook
+import { Employee, OrgData, OrgTreeNode } from "./types"; // [NEW] Centralized Types
+import { getAllDescendantIds, buildOrgTree, calculateTotalCounts } from "./utils/orgTreeUtils";
 import { theme } from "./constants/theme";
 // 이미지 에셋 임포트
 import copyIcon from "../assets/copy.png";
-import { buildOrgTree, calculateTotalCounts, OrgTreeNode } from "./utils/orgTreeUtils"; // calculateTotalCounts 추가
-
-/**
- * Employee 인터페이스
- * - 조직도에 표시될 직원 정보 데이터 구조 정의
- */
-interface Employee {
-  id: string; // 고유 ID (User Principal Name 또는 GUID)
-  name: string; // 이름
-  position: string; // 직위 (e.g. 과장, 대리)
-  role: string; // 직책 (e.g. 팀장)
-  department: string; // 부서명
-  orgFullName: string; // 조직 전체 경로명 (예: 아성다이소 > 인사본부 > 인사총무부)
-  orgId: string; // 부서 ID (트리 연동용)
-  extension: string; // 내선 번호
-  mobile: string; // 휴대폰 번호
-  email: string; // 이메일 주소
-  companyName: string; // 회사명 (e.g. 아성다이소)
-}
 
 /**
  * OrgChart 컴포넌트 메인
@@ -38,6 +18,11 @@ interface Employee {
  */
 export default function OrgChart() {
   // const { themeString } = useContext(TeamsFxContext);
+
+  // --- API Data Fetching ---
+  const { data, isLoading: isApiLoading, error } = useOrgChartData();
+  const orgList = data?.orgList || [];
+  const empList = data?.empList || [];
 
   // --- State 관리 영역 ---
 
@@ -51,7 +36,7 @@ export default function OrgChart() {
   const [currentOrg, setCurrentOrg] = useState<OrgData | null>(null);
 
   // 트리 데이터 State (인원수 계산을 위해 필요)
-  const [treeData, setTreeData] = useState<OrgData[]>([]);
+  const [treeData, setTreeData] = useState<OrgTreeNode[]>([]);
 
   // 4. 선택된 Org ID 관리
   const [selectedOrgId, setSelectedOrgId] = useState<string>("");
@@ -75,21 +60,16 @@ export default function OrgChart() {
   // 9. Bottom Panel 자동 스크롤을 위한 Ref
   const bottomPanelRef = useRef<HTMLDivElement>(null);
 
-  // 10. 로딩 상태
-  const [isLoading, setIsLoading] = useState(false);
+  // 10. 로딩 상태 (내부 처리용 + API 로딩)
+  const [isProcessing, setIsProcessing] = useState(false);
+  const isLoading = isApiLoading || isProcessing;
 
   // 11. 컨테이너 간 정확한 리사이즈 계산을 위해 메인 컨테이너 Ref
   const containerRef = useRef<HTMLDivElement>(null);
 
   // --- Custom Hooks ---
 
-  // Graph API를 통해 사용자의 상태(Presence)와 사진(Photo) 정보를 가져오는 훅
-  // --- Custom Hooks ---
-
-  // 1. SSO 토큰 발급 (백엔드 통신용)
-  const { token } = useTeamsAuth();
-
-  // 2. 사용자 상태/사진 데이터 (백엔드 API 연동 예정 - 현재는 빈 값)
+  // 사용자 상태/사진 데이터 (백엔드 API 연동 예정 - 현재는 빈 값)
   const userPresence: { [email: string]: string } = {};
   const userPhotos: { [email: string]: string } = {};
 
@@ -97,26 +77,28 @@ export default function OrgChart() {
   // orgList 검색 성능을 위해 Map으로 변환 (O(1) Lookup)
   const orgMap = useMemo(() => {
     return new Map(orgList.map(org => [org.orgId, org]));
-    return new Map(orgList.map(org => [org.orgId, org]));
-  }, []);
+  }, [orgList]); // orgList 변경 시 재계산
 
   // 부서별 인원수 계산 (Bottom-up Recursive Aggregation)
   const memberCountMapForOrgTree = useMemo(() => {
+    if (!orgList.length || !empList.length) return new Map<string, number>();
+
     // 1. 직속 직원 수 계산 (Direct Counts)
     const directCounts = new Map<string, number>();
-    empList.forEach(emp => {
+    empList.forEach((emp: Employee) => {
+      // emp.orgId 매핑 확인 필요. 
+      // 만약 백엔드 Employee의 orgId 필드명이 'deptCode' 등으로 다르다면 여기서 맞춰줘야 함.
+      // 현재는 types.ts의 Employee 인터페이스에 orgId가 있다고 가정.
       const current = directCounts.get(emp.orgId) || 0;
       directCounts.set(emp.orgId, current + 1);
     });
 
     // 2. 트리 구조를 순회하며 하위 부서 인원 누적
     if (treeData.length > 0) {
-      // treeData는 OrgData[]로 정의되어 있지만 실질적으로는 children을 포함한 OrgTreeNode[] 구조임.
-      // 따라서 타입 단언(Assertion)을 사용하여 타입을 맞춰줌.
-      return calculateTotalCounts(treeData as OrgTreeNode[], directCounts);
+      return calculateTotalCounts(treeData, directCounts);
     }
     return new Map<string, number>();
-  }, [treeData, empList]); // 트리나 직원 목록 변경 시 재계산
+  }, [treeData, empList, orgList]); // 데이터 변경 시 재계산
 
   // --- Helper Functions ---
 
@@ -129,57 +111,57 @@ export default function OrgChart() {
     const filtered = empList
       .filter((emp) => targetIds.has(emp.orgId))
       .map((emp) => ({
-        id: emp.empId,
-        name: emp.empNm,
-        position: emp.jobTitleDesc,
-        role: emp.posisionDesc || "-",
-        department: emp.orgNm || "-",
-        orgFullName: orgMap.get(emp.orgId)?.orgFullName || "-", // [New] Map 사용 최적화
-        orgId: emp.orgId, // [New]
-        extension: emp.offcTelNo || "-",
-        mobile: emp.moblTelNo || "-",
-        email: emp.emailAddr,
-        companyName: emp.compCd === "AD" ? "아성다이소" : emp.compCd === "AS" ? "아성" : emp.compCd === "AH" ? "아성HMP" : emp.compCd, // 회사코드 매핑인데 이건 나중에 DB에서 회사이름으로 바로 받아오게 변경할 예정
+        ...emp, // 이미 API에서 Employee 형태로 받아왔다고 가정
+        orgFullName: orgMap.get(emp.orgId)?.orgFullName || "-",
+        companyName: emp.companyName || (emp.orgId.startsWith("AD") ? "아성다이소" : "아성"), // 회사명 fallback 로직 필요 시 유지
       }));
     setUsers(filtered);
   };
 
   // --- Effects ---
 
-  // 1. 초기화 및 상태 복원 + SSO 시뮬레이션
+  // 1. API 데이터 로드 후 초기화
   useEffect(() => {
-    // LocalStorage에서 이전에 선택했던 사용자 목록(ID들)을 불러옴
-    const saved = localStorage.getItem("orgChartCheckedIds");
-    if (saved) {
-      try {
-        const ids = JSON.parse(saved);
-        setCheckedIds(new Set(ids));
-      } catch (e) { console.error("Failed to load saved state", e); }
+    if (!isLoading && data) {
+      // 초기 트리 구성
+      const tree = buildOrgTree(orgList);
+      setTreeData(tree);
+
+      // LocalStorage 복원
+      const saved = localStorage.getItem("orgChartCheckedIds");
+      if (saved) {
+        try {
+          const ids = JSON.parse(saved);
+          setCheckedIds(new Set(ids));
+        } catch (e) { console.error("Failed to load saved state", e); }
+      }
+
+      // 초기 선택 부서 설정 
+      // "박여명" (또는 "14636" HR/DMS시스템팀) 설정 로직 유지
+      // 실제 운영 환경에서는 로그인한 사용자의 부서 정보를 받아와야 함
+      const targetOrgId = "14636";
+
+      // 데이터가 존재하는지 확인 후 설정
+      if (orgMap.has(targetOrgId)) {
+        setSelectedOrgId(targetOrgId);
+        updateEmployeeList(targetOrgId);
+
+        const orgInfo = orgList.find(o => o.orgId === targetOrgId);
+        if (orgInfo) setCurrentOrg(orgInfo);
+      } else {
+        // 타겟 부서가 없으면 최상위 루트 선택 등 fallback 처리
+        if (tree.length > 0) {
+          const rootId = tree[0].orgId;
+          setSelectedOrgId(rootId);
+          updateEmployeeList(rootId);
+          setCurrentOrg(tree[0]);
+        }
+      }
     }
-
-    // 맨
-
-    // 초기 트리 구성
-    const tree = buildOrgTree(orgList);
-    setTreeData(tree); // 트리 데이터 저장 (인원수 계산용)
-
-    // SSO 시뮬레이션: "박여명" (또는 "14636" HR/DMS시스템팀) 설정
-    const targetOrgId = "14636"; // "박여명" 사용자의 부서(orgId: 14636)로 초기 선택 설정
-
-    setSelectedOrgId(targetOrgId);
-
-    // 데이터 로드 (초기에 접속한 사용자의 부서 정보로 해당 )
-    updateEmployeeList(targetOrgId);
-
-    // 현재 부서 정보 설정
-    // 회사 코드는 "AD"로 가정 (초기값)
-    const orgInfo = orgList.find(o => o.orgId === targetOrgId && o.companyCode === "AD");
-    if (orgInfo) {
-      setCurrentOrg(orgInfo);
-    }
-  }, []);
+  }, [data, isLoading, orgList, empList, orgMap]); // 데이터가 준비되면 실행
 
   // 2. 상태 저장
+
   useEffect(() => {
     // 체크된 사용자 목록이 변경될 때마다 LocalStorage에 저장
     localStorage.setItem("orgChartCheckedIds", JSON.stringify(Array.from(checkedIds)));
@@ -243,7 +225,7 @@ export default function OrgChart() {
 
   // 5. 왼쪽 트리에서 조직 선택 시 해당 조직의 직원 목록을 가져오며 로딩 스피너 표시
   const handleOrgSelect = (org: OrgData) => {
-    setIsLoading(true); // 로딩 시작
+    setIsProcessing(true); // 로딩 시작
 
     // 실제 데이터 로딩 (비동기 시 await 필요하지만 현재는 동기 처리)
     setCurrentOrg(org);
@@ -252,7 +234,7 @@ export default function OrgChart() {
     console.log("Selected Org:", org);
     updateEmployeeList(org.orgId);
 
-    setIsLoading(false); // 로딩 종료
+    setIsProcessing(false); // 로딩 종료
   };
 
   const handleSearch = (category: string, term: string) => {
@@ -273,39 +255,27 @@ export default function OrgChart() {
 
     const lowerTerm = term.toLowerCase();
 
-    setIsLoading(true);
+    setIsProcessing(true);
 
     // 검색 로직
-    const filtered = empList.filter(emp => {
+    const filtered = empList.filter((emp: Employee) => {
       let value = "";
       switch (category) {
-        case 'user': value = emp.empNm; break;
-        case 'extension': value = emp.offcTelNo; break;
-        case 'mobile': value = emp.moblTelNo; break;
-        case 'position': value = emp.jobTitleDesc; break; // 직위 -> jobTitleDesc
-        case 'jobTitle': value = emp.posisionDesc; break; // 직책 -> posisionDesc
+        case 'user': value = emp.name; break;
+        case 'extension': value = emp.extension; break;
+        case 'mobile': value = emp.mobile; break;
+        case 'position': value = emp.position; break;
+        case 'jobTitle': value = emp.role; break;
         default: return false;
       }
       return value && String(value).toLowerCase().includes(lowerTerm);
-    }).map((emp) => ({
-      id: emp.empId,
-      name: emp.empNm,
-      position: emp.jobTitleDesc,
-      role: emp.posisionDesc || "-",
-      department: emp.orgNm || "-",
-      orgFullName: orgMap.get(emp.orgId)?.orgFullName || "-", // [New] Map 사용 최적화
-      extension: emp.offcTelNo || "-",
-      mobile: emp.moblTelNo || "-",
-      email: emp.emailAddr,
-      orgId: emp.orgId,
-      companyName: emp.compCd === "AD" ? "아성다이소" : emp.compCd === "AS" ? "아성" : emp.compCd === "AH" ? "아성HMP" : emp.compCd, // 회사코드 매핑인데 이건 나중에 DB에서 회사이름으로 바로 받아오게 변경할 예정
-    }));
+    });
 
     setUsers(filtered);
     setCurrentOrg(null);
     setIsSearchMode(true);
 
-    setIsLoading(false);
+    setIsProcessing(false);
   };
 
   const isAllCheckedGrid = users.length > 0 && users.every(u => checkedIds.has(u.id));
@@ -409,18 +379,8 @@ export default function OrgChart() {
     // checkedIds(Set)의 순서(추가된 순서)를 보장하기 위해
     // empList를 필터링하는 대신 checkedIds를 순회하며 데이터를 찾습니다.
     return Array.from(checkedIds)
-      .map(id => empList.find(emp => emp.empId === id))
-      .filter((emp): emp is typeof empList[0] => !!emp) // undefined 제거 및 타입 가드
-      .map((emp) => ({
-        id: emp.empId,
-        name: emp.empNm,
-        position: emp.jobTitleDesc,
-        role: emp.posisionDesc || "-",
-        department: emp.orgNm || "-",
-        extension: emp.offcTelNo || "-",
-        mobile: emp.moblTelNo || "-",
-        email: emp.emailAddr,
-      }));
+      .map(id => empList.find((emp: Employee) => emp.id === id))
+      .filter((emp): emp is Employee => !!emp);
   };
 
   return (
@@ -481,6 +441,7 @@ export default function OrgChart() {
             onSearch={handleSearch}
             orgMap={orgMap}
             memberCounts={memberCountMapForOrgTree} // 인원수 Map 전달
+            orgList={orgList} // [NEW] 데이터 전달
           />
         </div>
       </div>
