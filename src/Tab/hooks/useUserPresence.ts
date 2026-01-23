@@ -4,14 +4,11 @@ import { UserPresence } from "../types";
 
 export const useUserPresence = (emails: string[], token: string) => {
     const [presenceMap, setPresenceMap] = useState<Record<string, UserPresence>>({});
-    const [isLoading, setIsLoading] = useState(false);
 
     const fetchPresence = useCallback(async () => {
         if (!token || emails.length === 0) return;
 
         try {
-            // setIsLoading(true); // 너무 빈번한 깜빡임 방지를 위해 로딩 상태는 선택적으로 사용 or 스켈레톤 UI
-
             const response = await fetch(`${API_BASE_URL}/api/users/presence`, {
                 method: "POST",
                 headers: {
@@ -38,8 +35,6 @@ export const useUserPresence = (emails: string[], token: string) => {
 
         } catch (err) {
             console.error("Failed to fetch presence:", err);
-        } finally {
-            setIsLoading(false);
         }
     }, [token, JSON.stringify(emails)]); // emails 배열 내용이 바뀔 때마다
 

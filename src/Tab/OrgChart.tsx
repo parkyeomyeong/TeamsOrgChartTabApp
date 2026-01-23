@@ -477,7 +477,7 @@ export default function OrgChart() {
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
           {/* 2-1. Center Content (사용자 목록 그리드 영역) - 상단 80% */}
-          <div style={{ flex: 4, padding: "20px", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          <div style={{ flex: 4, padding: "10px", overflow: "hidden", display: "flex", flexDirection: "column" }}>
             <h2 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "15px", color: theme.colors.textMain }}>
               {isSearchMode ? "검색 결과" : (currentOrg ? currentOrg.orgName : "전체 조직")} <span style={{ color: theme.colors.primary }}>{users.length}</span>
             </h2>
@@ -488,7 +488,7 @@ export default function OrgChart() {
 
               <div style={{ flex: 1, overflowY: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
+                  <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
                     <tr style={{ borderBottom: "1px solid #edebe9", backgroundColor: "#f3f2f1", textAlign: "left" }}>
                       <th style={{ ...thStyle, width: "40px", textAlign: "center", verticalAlign: "middle" }}>
                         <input

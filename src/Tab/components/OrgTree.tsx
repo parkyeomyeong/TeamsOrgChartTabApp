@@ -399,7 +399,7 @@ const highlightText = (text: string, term?: string) => {
         <span>
             {parts.map((part, i) =>
                 part.toLowerCase() === term.toLowerCase() ? (
-                    <span key={i} style={{ backgroundColor: theme.colors.highlight, fontWeight: 'bold' }}>
+                    <span key={i} style={{ backgroundColor: theme.colors.borderFocus, fontWeight: 'bold' }}>
                         {part}
                     </span>
                 ) : (
