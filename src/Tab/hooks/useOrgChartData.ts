@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useTeamsAuth } from "./useTeamsAuth";
 import { API_BASE_URL } from "../config";
 import { Employee, OrgData } from "../types";
 
@@ -8,8 +7,7 @@ interface OrgChartData {
     empList: Employee[];
 }
 
-export const useOrgChartData = () => {
-    const { token } = useTeamsAuth();
+export const useOrgChartData = (token: string) => {
     const [data, setData] = useState<OrgChartData | null>(null);
     const [isLoading, setIsLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);

@@ -1,16 +1,20 @@
 import React, { useState, useMemo, useEffect, useContext, useCallback, useRef, CSSProperties } from "react";
 import { app } from "@microsoft/teams-js";
+import { FluentProvider, webLightTheme } from "@fluentui/react-components";
 // import { TeamsFxContext } from "../Context"; // 현재 사용하지 않음 (필요 시 주석 해제)
 import { AvatarWithStatus } from "./components/StatusAvatar";
 import { OrgTreeView } from "./components/OrgTree";
 import { Toast } from "./components/Toast";
 import { Spinner } from "./components/Spinner";
-import { useOrgChartData } from "./hooks/useOrgChartData"; // [NEW] API Hook
-import { Employee, OrgData, OrgTreeNode } from "./types"; // [NEW] Centralized Types
+import { useOrgChartData } from "./hooks/useOrgChartData"; // API Hook
+import { Employee, OrgData, OrgTreeNode } from "./types"; // Centralized Types
 import { getAllDescendantIds, buildOrgTree, calculateTotalCounts } from "./utils/orgTreeUtils";
 import { theme } from "./constants/theme";
 // 이미지 에셋 임포트
 import copyIcon from "../assets/copy.png";
+import { useUserPresence } from "./hooks/useUserPresence"; // Presence Hook
+import { PresenceBadge } from "./components/PresenceBadge"; // Badge Component
+import { useTeamsAuth } from "./hooks/useTeamsAuth";
 
 /**
  * OrgChart 컴포넌트 메인
@@ -19,8 +23,11 @@ import copyIcon from "../assets/copy.png";
 export default function OrgChart() {
   // const { themeString } = useContext(TeamsFxContext);
 
+  // SSO Token (One-time fetch)
+  const { token } = useTeamsAuth();
+
   // --- API Data Fetching ---
-  const { data, isLoading: isApiLoading, error } = useOrgChartData();
+  const { data, isLoading: isApiLoading, error } = useOrgChartData(token); // 맨 처음 SSO 인증 + 조직정보 + 직원정보 가져오는 출발 훅 
   const orgList = data?.orgList || [];
   const empList = data?.empList || [];
 
@@ -28,6 +35,14 @@ export default function OrgChart() {
 
   // 1. 중앙 그리드에 표시될 사용자 목록
   const [users, setUsers] = useState<Employee[]>([]);
+
+  // 1.1 현재 표시된 사용자의 이메일 목록 추출 (Presence 조회를 위해)
+  const userEmails = useMemo(() => users.map(u => u.email).filter(Boolean), [users]);
+
+  // --- Custom Hooks ---
+  // Presence Hook 사용
+  const { presenceMap } = useUserPresence(userEmails, token);
+  const userPhotos: { [email: string]: string } = {}; // 나중에 구현 예정
 
   // 2. 팝업(상세 정보)에 표시할 선택된 사용자
   const [selectedUser, setSelectedUser] = useState<Employee | null>(null);
@@ -67,13 +82,8 @@ export default function OrgChart() {
   // 11. 컨테이너 간 정확한 리사이즈 계산을 위해 메인 컨테이너 Ref
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // --- Custom Hooks ---
-
-  // 사용자 상태/사진 데이터 (백엔드 API 연동 예정 - 현재는 빈 값)
-  const userPresence: { [email: string]: string } = {};
-  const userPhotos: { [email: string]: string } = {};
-
   // --- Memos ---
+
   // orgList 검색 성능을 위해 Map으로 변환 (O(1) Lookup)
   const orgMap = useMemo(() => {
     return new Map(orgList.map(org => [org.orgId, org]));
@@ -384,328 +394,355 @@ export default function OrgChart() {
   };
 
   return (
-    <div
-      ref={containerRef}
-      style={{
-        display: "flex",
-        height: "100vh",
-        backgroundColor: theme.colors.bgMain,
-        fontFamily: "Segoe UI, sans-serif",
-        overflow: "hidden",
-        userSelect: isResizing ? "none" : "auto",
-        cursor: isResizing ? "col-resize" : "auto"
-      }}
-    >
-      {/* 스크롤바 커스텀 스타일 주입 */}
-      <style>{`
-        ::-webkit-scrollbar {
-          width: 8px;
-          height: 8px;
-        }
-        ::-webkit-scrollbar-thumb {
-          background: #c8c6c4; 
-          border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-          background: #888; 
-        }
-        ::-webkit-scrollbar-track {
-          background: #f3f2f1; 
-        }
-      `}</style>
-
-      {/* 1. Left Sidebar (조직도 트리 영역) - Resizable */}
+    <FluentProvider theme={webLightTheme} style={{ display: "flex", height: "100vh", backgroundColor: theme.colors.bgMain }}>
       <div
+        ref={containerRef}
         style={{
-          width: `${sidebarWidth}px`,
-          minWidth: "220px",
-          maxWidth: "400px",
-          backgroundColor: theme.colors.bgWhite,
-          // borderRight: `1px solid ${theme.colors.border}`, // 핸들로 대체
           display: "flex",
-          flexDirection: "column",
-          padding: "16px",
-          // overflowY: "hidden", // OrgTree 내부 스크롤 사용
-          flexShrink: 0,
+          width: "100%",
+          height: "100%",
+          fontFamily: "Segoe UI, sans-serif",
+          overflow: "hidden",
+          userSelect: isResizing ? "none" : "auto",
+          cursor: isResizing ? "col-resize" : "auto"
         }}
       >
-        <h2 style={{ fontSize: "18px", fontWeight: "600", marginBottom: "16px", color: theme.colors.textMain, whiteSpace: "nowrap" }}>
-          조직도
-        </h2>
+        {/* 스크롤바 커스텀 스타일 주입 */}
+        <style>{`
+          ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+          }
+          ::-webkit-scrollbar-thumb {
+            background: #c8c6c4; 
+            border-radius: 4px;
+          }
+          ::-webkit-scrollbar-thumb:hover {
+            background: #888; 
+          }
+          ::-webkit-scrollbar-track {
+            background: #f3f2f1; 
+          }
+        `}</style>
 
-        <div style={{ flex: 1, overflow: "auto" }}>
-          {/* OrgTreeView 컴포넌트를 사용하여 조직 계층 구조 표시 */}
-          <OrgTreeView
-            onSelectOrg={handleOrgSelect}
-            selectedOrgId={selectedOrgId}
-            onSearch={handleSearch}
-            orgMap={orgMap}
-            memberCounts={memberCountMapForOrgTree} // 인원수 Map 전달
-            orgList={orgList} // [NEW] 데이터 전달
-          />
-        </div>
-      </div>
-
-      {/* Resizer Handle (드래그 핸들) */}
-      <div
-        onMouseDown={startResizing}
-        style={{
-          width: "5px",
-          height: "100%",
-          cursor: "col-resize",
-          backgroundColor: isResizing ? theme.colors.primary : theme.colors.border,
-          zIndex: 10,
-          transition: "background-color 0.2s",
-          flexShrink: 0,
-        }}
-        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#c8c6c4"}
-        onMouseLeave={(e) => !isResizing && (e.currentTarget.style.backgroundColor = "#edebe9")}
-      />
-
-      {/* 2. Right Container (Grid + Bottom Panel) */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-
-        {/* 2-1. Center Content (사용자 목록 그리드 영역) - 상단 80% */}
-        <div style={{ flex: 4, padding: "20px", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-          <h2 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "15px", color: theme.colors.textMain }}>
-            {isSearchMode ? "검색 결과" : (currentOrg ? currentOrg.orgName : "전체 조직")} <span style={{ color: theme.colors.primary }}>{users.length}</span>
+        {/* 1. Left Sidebar (조직도 트리 영역) - Resizable */}
+        <div
+          style={{
+            width: `${sidebarWidth}px`,
+            minWidth: "220px",
+            maxWidth: "400px",
+            backgroundColor: theme.colors.bgWhite,
+            // borderRight: `1px solid ${theme.colors.border}`, // 핸들로 대체
+            display: "flex",
+            flexDirection: "column",
+            padding: "16px",
+            // overflowY: "hidden", // OrgTree 내부 스크롤 사용
+            flexShrink: 0,
+          }}
+        >
+          <h2 style={{ fontSize: "18px", fontWeight: "600", marginBottom: "16px", color: theme.colors.textMain, whiteSpace: "nowrap" }}>
+            조직도
           </h2>
 
-          <div style={{ backgroundColor: theme.colors.bgWhite, boxShadow: theme.shadow.default, borderRadius: theme.radius.small, overflow: "hidden", display: "flex", flexDirection: "column", flex: 1, position: "relative" }}>
-            {/* 로딩 스피너 */}
-            {isLoading && <Spinner />}
+          <div style={{ flex: 1, overflow: "auto" }}>
+            {/* OrgTreeView 컴포넌트를 사용하여 조직 계층 구조 표시 */}
+            <OrgTreeView
+              onSelectOrg={handleOrgSelect}
+              selectedOrgId={selectedOrgId}
+              onSearch={handleSearch}
+              orgMap={orgMap}
+              memberCounts={memberCountMapForOrgTree} // 인원수 Map 전달
+              orgList={orgList} // 데이터 전달
+            />
+          </div>
+        </div>
 
-            <div style={{ flex: 1, overflowY: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
-                  <tr style={{ borderBottom: "1px solid #edebe9", backgroundColor: "#f3f2f1", textAlign: "left" }}>
-                    <th style={{ ...thStyle, width: "40px", textAlign: "center", verticalAlign: "middle" }}>
-                      <input
-                        type="checkbox"
-                        checked={isAllCheckedGrid}
-                        onChange={toggleAllGrid}
-                        style={{ cursor: "pointer", transform: "scale(1.5)", margin: "0" }}
-                      />
-                    </th>
-                    <th style={thStyle}>이름</th>
-                    <th style={thStyle}>직위</th>
-                    <th style={thStyle}>직책</th>
-                    <th style={thStyle}>부서명</th>
-                    <th style={thStyle}>내선전화</th>
-                    <th style={thStyle}>휴대전화</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map((emp) => (
-                    <tr
-                      key={emp.id}
-                      onClick={() => handleRowClick(emp)}
-                      style={{ borderBottom: "1px solid #edebe9", backgroundColor: "white", cursor: "pointer" }}
-                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#faf9f8"}
-                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "white"}
-                    >
-                      <td style={{ textAlign: "center", padding: "10px", verticalAlign: "middle" }} onClick={(e) => e.stopPropagation()}>
+        {/* Resizer Handle (드래그 핸들) */}
+        <div
+          onMouseDown={startResizing}
+          style={{
+            width: "5px",
+            height: "100%",
+            cursor: "col-resize",
+            backgroundColor: isResizing ? theme.colors.primary : theme.colors.border,
+            zIndex: 10,
+            transition: "background-color 0.2s",
+            flexShrink: 0,
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#c8c6c4"}
+          onMouseLeave={(e) => !isResizing && (e.currentTarget.style.backgroundColor = "#edebe9")}
+        />
+
+        {/* 2. Right Container (Grid + Bottom Panel) */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+          {/* 2-1. Center Content (사용자 목록 그리드 영역) - 상단 80% */}
+          <div style={{ flex: 4, padding: "20px", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+            <h2 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "15px", color: theme.colors.textMain }}>
+              {isSearchMode ? "검색 결과" : (currentOrg ? currentOrg.orgName : "전체 조직")} <span style={{ color: theme.colors.primary }}>{users.length}</span>
+            </h2>
+
+            <div style={{ backgroundColor: theme.colors.bgWhite, boxShadow: theme.shadow.default, borderRadius: theme.radius.small, overflow: "hidden", display: "flex", flexDirection: "column", flex: 1, position: "relative" }}>
+              {/* 로딩 스피너 */}
+              {isLoading && <Spinner />}
+
+              <div style={{ flex: 1, overflowY: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
+                    <tr style={{ borderBottom: "1px solid #edebe9", backgroundColor: "#f3f2f1", textAlign: "left" }}>
+                      <th style={{ ...thStyle, width: "40px", textAlign: "center", verticalAlign: "middle" }}>
                         <input
                           type="checkbox"
-                          checked={isCheckedGrid(emp.id)}
-                          onChange={() => toggleCheckGrid(emp.id)}
+                          checked={isAllCheckedGrid}
+                          onChange={toggleAllGrid}
                           style={{ cursor: "pointer", transform: "scale(1.5)", margin: "0" }}
                         />
-                      </td>
-                      <td style={{ ...tdStyle, display: "flex", alignItems: "center", gap: "8px" }}>
-                        <AvatarWithStatus name={emp.name} photoUrl={userPhotos[emp.email]} status={userPresence[emp.email]} size={24} />
-                        {emp.name}
-                      </td>
-                      <td style={tdStyle}>{emp.position}</td>
-                      <td style={tdStyle}>{emp.role}</td>
-                      <td style={tdStyle}>{emp.department}</td>
-                      <td style={tdStyle}>{emp.extension}</td>
-                      <td style={tdStyle}>{emp.mobile}</td>
+                      </th>
+                      <th style={thStyle}>이름</th>
+                      <th style={thStyle}>직위</th>
+                      <th style={thStyle}>직책</th>
+                      <th style={thStyle}>부서명</th>
+                      <th style={thStyle}>내선전화</th>
+                      <th style={thStyle}>휴대전화</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        {/* 2-2. Bottom Panel (선택된 대화상대 패널) - 하단 20% */}
-        <div style={{
-          flex: 1,
-          backgroundColor: theme.colors.bgWhite,
-          borderTop: `1px solid ${theme.colors.border}`,
-          padding: "15px",
-          display: "flex",
-          flexDirection: "column",
-          minHeight: "150px" // 최소 높이 확보
-        }}>
-
-          {/* 패널 헤더 */}
-          <div style={{ marginBottom: "10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <span style={{ fontSize: "16px", fontWeight: "bold", color: "#323130" }}>
-                선택된 대화상대 <span style={{ color: "#6264A7" }}>{checkedIds.size}명</span>
-              </span>
-              {rightPanelCheckedIds.size > 0 && (
-                <button
-                  onClick={deleteSelectedRightPanel}
-                  style={{ border: "none", background: "none", color: "#d13438", fontSize: "12px", cursor: "pointer", fontWeight: "600" }}
-                >
-                  선택 삭제 ({rightPanelCheckedIds.size})
-                </button>
-              )}
-            </div>
-
-            <div style={{ display: "flex", gap: "5px" }}>
-              <IconButton onClick={() => openDeepLink('call', getCheckedEmployees().map(e => e.email))} icon="📞" text="통화" color={theme.colors.primary} />
-              <IconButton onClick={() => openDeepLink('chat', getCheckedEmployees().map(e => e.email))} icon="💬" text="채팅" color={theme.colors.primary} />
-              <IconButton onClick={() => openDeepLink('meeting', getCheckedEmployees().map(e => e.email))} icon="📅" text="모임" color={theme.colors.primary} />
-              {checkedIds.size > 0 && (
-                <button
-                  onClick={() => setCheckedIds(new Set())}
-                  style={{ border: `1px solid ${theme.colors.danger}`, background: "white", color: theme.colors.danger, borderRadius: "4px", padding: "4px 8px", fontSize: "12px", cursor: "pointer", marginLeft: "10px" }}
-                >
-                  전체 삭제
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* 가로 스크롤 카드 영역 */}
-          <div
-            ref={bottomPanelRef}
-            style={{
-              flex: 1,
-              display: "flex",
-              gap: "10px",
-              overflowX: "auto",
-              paddingBottom: "5px",
-              alignItems: "flex-start" // 카드 높이 자동 조절보다는 상단 정렬
-            }}>
-            {checkedIds.size === 0 ? (
-              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#605e5c", fontSize: "13px" }}>
-                선택된 사용자가 없습니다. 목록에서 체크박스를 선택하세요.
+                  </thead>
+                  <tbody>
+                    {users.map((emp) => (
+                      <tr
+                        key={emp.id}
+                        onClick={() => handleRowClick(emp)}
+                        style={{ borderBottom: "1px solid #edebe9", backgroundColor: "white", cursor: "pointer" }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#faf9f8"}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "white"}
+                      >
+                        <td style={{ textAlign: "center", padding: "10px", verticalAlign: "middle" }} onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isCheckedGrid(emp.id)}
+                            onChange={() => toggleCheckGrid(emp.id)}
+                            style={{ cursor: "pointer", transform: "scale(1.5)", margin: "0" }}
+                          />
+                        </td>
+                        <td style={{ ...tdStyle, display: "flex", alignItems: "center", gap: "12px" }}>
+                          <AvatarWithStatus name={emp.name} photoUrl={userPhotos[emp.email]} status={presenceMap[emp.email]} size={32} />
+                          {emp.name}
+                        </td>
+                        <td style={tdStyle}>{emp.position}</td>
+                        <td style={tdStyle}>{emp.role}</td>
+                        <td style={tdStyle}>{emp.department}</td>
+                        <td style={tdStyle}>{emp.extension}</td>
+                        <td style={tdStyle}>{emp.mobile}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            ) : (
-              getCheckedEmployees().map(emp => (
-                <div key={emp.id} style={{
-                  minWidth: "160px", // 사이즈 축소
-                  padding: "8px",
-                  border: isCheckedRight(emp.id) ? "1px solid #6264A7" : "1px solid #edebe9", // 선택 시 테두리 강조
-                  backgroundColor: isCheckedRight(emp.id) ? "#f3f2f1" : "white",
-                  borderRadius: "4px",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "4px",
-                  boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
-                  position: "relative",
-                  cursor: "pointer"
-                }}
-                  onClick={() => toggleCheckRightPanel(emp.id)} // 카드 클릭 시 선택 토글
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    {/* 체크박스 추가 */}
-                    <input
-                      type="checkbox"
-                      checked={isCheckedRight(emp.id)}
-                      onChange={(e) => { e.stopPropagation(); toggleCheckRightPanel(emp.id); }}
-                      style={{ cursor: "pointer" }}
-                    />
-                    <AvatarWithStatus name={emp.name} photoUrl={userPhotos[emp.email]} status={userPresence[emp.email]} size={24} />
-                    <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      <div style={{ fontWeight: "bold", fontSize: "13px", color: "#323130" }}>{emp.name}</div>
-                      <div style={{ fontSize: "11px", color: "#605e5c" }}>{emp.position}</div>
+            </div>
+          </div>
+
+          {/* 2-2. Bottom Panel (선택된 대화상대 패널) - 하단 20% */}
+          <div style={{
+            flex: 1,
+            backgroundColor: theme.colors.bgWhite,
+            borderTop: `1px solid ${theme.colors.border}`,
+            padding: "15px",
+            display: "flex",
+            flexDirection: "column",
+            minHeight: "150px" // 최소 높이 확보
+          }}>
+
+            {/* 패널 헤더 */}
+            <div style={{ marginBottom: "10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "16px", fontWeight: "bold", color: "#323130" }}>
+                  선택된 대화상대 <span style={{ color: "#6264A7" }}>{checkedIds.size}명</span>
+                </span>
+                {rightPanelCheckedIds.size > 0 && (
+                  <button
+                    onClick={deleteSelectedRightPanel}
+                    style={{ border: "none", background: "none", color: "#d13438", fontSize: "12px", cursor: "pointer", fontWeight: "600" }}
+                  >
+                    선택 삭제 ({rightPanelCheckedIds.size})
+                  </button>
+                )}
+              </div>
+
+              <div style={{ display: "flex", gap: "5px" }}>
+                <IconButton onClick={() => openDeepLink('call', getCheckedEmployees().map(e => e.email))} icon="📞" text="통화" color={theme.colors.primary} />
+                <IconButton onClick={() => openDeepLink('chat', getCheckedEmployees().map(e => e.email))} icon="💬" text="채팅" color={theme.colors.primary} />
+                <IconButton onClick={() => openDeepLink('meeting', getCheckedEmployees().map(e => e.email))} icon="📅" text="모임" color={theme.colors.primary} />
+                {checkedIds.size > 0 && (
+                  <button
+                    onClick={() => setCheckedIds(new Set())}
+                    style={{ border: `1px solid ${theme.colors.danger}`, background: "white", color: theme.colors.danger, borderRadius: "4px", padding: "4px 8px", fontSize: "12px", cursor: "pointer", marginLeft: "10px" }}
+                  >
+                    전체 삭제
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 가로 스크롤 카드 영역 */}
+            <div
+              ref={bottomPanelRef}
+              style={{
+                flex: 1,
+                display: "flex",
+                gap: "10px",
+                overflowX: "auto",
+                paddingBottom: "5px",
+                alignItems: "flex-start"
+              }}>
+              {checkedIds.size === 0 ? (
+                <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#605e5c", fontSize: "13px" }}>
+                  선택된 사용자가 없습니다. 목록에서 체크박스를 선택하세요.
+                </div>
+              ) : (
+                getCheckedEmployees().map(emp => (
+                  <div key={emp.id} style={{
+                    minWidth: "160px",
+                    padding: "8px",
+                    border: isCheckedRight(emp.id) ? "1px solid #6264A7" : "1px solid #edebe9", // 선택 시 테두리 강조
+                    backgroundColor: isCheckedRight(emp.id) ? "#f3f2f1" : "white",
+                    borderRadius: "4px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "4px",
+                    boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
+                    position: "relative",
+                    cursor: "pointer"
+                  }}
+                    onClick={() => toggleCheckRightPanel(emp.id)} // 카드 클릭 시 선택 토글
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      {/* 체크박스 추가 */}
+                      <input
+                        type="checkbox"
+                        checked={isCheckedRight(emp.id)}
+                        onChange={(e) => { e.stopPropagation(); toggleCheckRightPanel(emp.id); }}
+                        style={{ cursor: "pointer" }}
+                      />
+                      <AvatarWithStatus name={emp.name} photoUrl={userPhotos[emp.email]} status={presenceMap[emp.email]} size={24} />
+                      <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        <div style={{ fontWeight: "bold", fontSize: "13px", color: "#323130" }}>{emp.name}</div>
+                        <div style={{ fontSize: "11px", color: "#605e5c" }}>{emp.position}</div>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#605e5c", marginTop: "auto", paddingLeft: "4px" }}>
+                      {emp.department}
+                    </div>
+                    {/* 개별 삭제 버튼 ('X') */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleCheckGrid(emp.id); }}
+                      style={{ position: "absolute", top: "2px", right: "2px", border: "none", background: "none", cursor: "pointer", color: "#a19f9d", fontSize: "14px" }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )))}
+            </div>
+          </div>
+          {/* End of Bottom Panel */}
+        </div>
+        {/* End of Right Container */}
+
+        {/* 4. 사용자 상세 정보 팝업 (Modal) */}
+        {selectedUser && (
+          <div style={overlayStyle}>
+            <div style={popupStyle}>
+              <button onClick={() => setSelectedUser(null)} style={closeBtnStyle}>✕</button>
+              {/* padding: 30px, flex layout with centered vertical alignment */}
+              <div style={{ padding: "30px", display: "flex", gap: "20px", alignItems: "center" }}>
+                {/* 프로필 사진 (크게) - 중앙 정렬 */}
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minWidth: "130px" }}>
+                  <AvatarWithStatus
+                    name={selectedUser.name}
+                    photoUrl={userPhotos[selectedUser.email]}
+                    status={presenceMap[selectedUser.email]}
+                    size={96} // Fluent UI Standard Size
+                    hideBadge={true} // 팝업에서는 아바타 옆 배지 숨김
+                  />
+                  {/* 팝업에서는 상태 텍스트도 표시 (하단) */}
+                  <div style={{ marginTop: "12px" }}>
+                    <PresenceBadge status={presenceMap[selectedUser.email]} showText={true} />
+                  </div>
+                </div>
+                {/* 정보 텍스트 */}
+                <div style={{ flex: 1, color: "#323130" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "20px" }}>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
+                      <span style={{ fontSize: "20px", fontWeight: "bold", color: "#323130" }}>{selectedUser.name}</span>
+                      <span style={{ fontSize: "14px", color: "#605e5c" }}>{selectedUser.position}</span>
+                    </div>
+                    <div style={{ fontSize: "14px", color: "#605e5c" }}>
+                      <strong>{selectedUser.companyName}</strong> | {selectedUser.department} | {selectedUser.role}
+                    </div>
+                    {/* 전체 부서 경로 표시 */}
+                    <div
+                      style={{
+                        fontSize: "13px",
+                        color: "#a19f9d",
+                        marginTop: "4px",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        maxWidth: "400px",
+                        display: "block"
+                      }}
+                      title={selectedUser.orgFullName.replace(/ /g, " > ")}
+                    >
+                      {selectedUser.orgFullName.replace(/ /g, " > ")}
                     </div>
                   </div>
-                  <div style={{ fontSize: "11px", color: "#605e5c", marginTop: "auto", paddingLeft: "4px" }}>
-                    {emp.department}
-                  </div>
-                  {/* 개별 삭제 버튼 ('X') */}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); toggleCheckGrid(emp.id); }}
-                    style={{ position: "absolute", top: "2px", right: "2px", border: "none", background: "none", cursor: "pointer", color: "#a19f9d", fontSize: "14px" }}
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
 
-      </div>
-
-      {/* 4. 사용자 상세 정보 팝업 (Modal) */}
-      {selectedUser && (
-        <div style={overlayStyle}>
-          <div style={popupStyle}>
-            <button onClick={() => setSelectedUser(null)} style={closeBtnStyle}>✕</button>
-            <div style={{ padding: "30px", display: "flex", gap: "20px" }}>
-              {/* 프로필 사진 (크게) */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <AvatarWithStatus name="" photoUrl={userPhotos[selectedUser.email]} status={userPresence[selectedUser.email]} size={80} showStatusText={false} />
-              </div>
-              {/* 정보 텍스트 */}
-              <div style={{ flex: 1, color: "#323130" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "20px" }}>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
-                    <span style={{ fontSize: "20px", fontWeight: "bold", color: "#323130" }}>{selectedUser.name}</span>
-                    <span style={{ fontSize: "14px", color: "#605e5c" }}>{selectedUser.position}</span>
+                  {/* 퀵 액션 버튼들 */}
+                  <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
+                    <CircleButton onClick={() => openDeepLink('call', [selectedUser.email])} icon="📞" />
+                    <CircleButton onClick={() => openDeepLink('mail', [selectedUser.email])} icon="✉️" />
+                    <CircleButton onClick={() => openDeepLink('chat', [selectedUser.email])} icon="💬" />
+                    <CircleButton onClick={() => openDeepLink('meeting', [selectedUser.email])} icon="📅" />
                   </div>
-                  <div style={{ fontSize: "14px", color: "#605e5c" }}>
-                    <strong>{selectedUser.companyName}</strong> | {selectedUser.department} | {selectedUser.role}
-                  </div>
-                  {/* 전체 부서 경로 표시 (긴 경우 말줄임표) */}
-                  <div
-                    style={{
-                      fontSize: "13px",
-                      color: "#a19f9d",
-                      marginTop: "4px",
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      maxWidth: "400px",
-                      display: "block"
-                    }}
-                    title={selectedUser.orgFullName.replace(/ /g, " > ")}
-                  >
-                    {selectedUser.orgFullName.replace(/ /g, " > ")}
-                  </div>
-                  <div style={{ fontSize: "13px", color: "#a19f9d" }}>담당업무 : 전산직</div>
-                </div>
 
-                {/* 퀵 액션 버튼들 */}
-                <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
-                  <CircleButton onClick={() => openDeepLink('call', [selectedUser.email])} icon="📞" />
-                  <CircleButton onClick={() => openDeepLink('mail', [selectedUser.email])} icon="✉️" />
-                  <CircleButton onClick={() => openDeepLink('chat', [selectedUser.email])} icon="💬" />
-                  <CircleButton onClick={() => openDeepLink('meeting', [selectedUser.email])} icon="📅" />
-                </div>
-
-                {/* 상세 연락처 정보 그리드 */}
-                <div style={{ display: "grid", gridTemplateColumns: "80px 1fr", gap: "8px", fontSize: "13px" }}>
-                  <InfoRow label="핸드폰" value={selectedUser.mobile} onCopy={handleCopy} />
-                  <InfoRow label="이메일" value={selectedUser.email} onCopy={handleCopy} />
-                  <InfoRow label="전화번호" value={selectedUser.extension} onCopy={handleCopy} />
-                  <InfoRow label="주소" value="서울특별시 강남구 남부순환로 2748 (도곡동)" onCopy={handleCopy} />
+                  {/* 상세 연락처 정보 그리드 */}
+                  <div style={{ display: "grid", gridTemplateColumns: "80px 1fr", gap: "8px", fontSize: "13px" }}>
+                    <InfoRow label="핸드폰" value={selectedUser.mobile} onCopy={handleCopy} />
+                    <InfoRow label="이메일" value={selectedUser.email} onCopy={handleCopy} />
+                    <InfoRow label="전화번호" value={selectedUser.extension} onCopy={handleCopy} />
+                    <InfoRow label="주소" value="서울특별시 강남구 남부순환로 2748 (도곡동)" onCopy={handleCopy} />
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Toast Notification */}
-      <Toast
-        message={toastMessage || ""}
-        visible={!!toastMessage}
-        onClose={() => setToastMessage(null)}
-      />
-    </div>
+        {/* Toast Notification */}
+        <Toast
+          message={toastMessage || ""}
+          visible={!!toastMessage}
+          onClose={() => setToastMessage(null)}
+        />
+      </div>
+    </FluentProvider>
   );
 }
 
-// --- 하위 스타일 컴포넌트 ---
+// --- 하위 스타일 컴포넌트 및 상수 ---
+
+const thStyle: CSSProperties = { padding: "10px", fontWeight: "600", color: theme.colors.textMain, fontSize: "13px", borderBottom: `1px solid ${theme.colors.border}` };
+const tdStyle: CSSProperties = { padding: "10px", color: "#201f1e", fontSize: "14px" };
+const overlayStyle: CSSProperties = {
+  position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+  backgroundColor: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000
+};
+const popupStyle: CSSProperties = {
+  width: "650px", backgroundColor: theme.colors.bgWhite, borderRadius: theme.radius.medium,
+  boxShadow: theme.shadow.popup, position: "relative", overflow: "hidden"
+};
+const closeBtnStyle: CSSProperties = {
+  position: "absolute", top: "15px", right: "15px", background: "none", border: "none",
+  fontSize: "20px", cursor: "pointer", color: theme.colors.textSecondary
+};
 
 // 세련된 버튼 스타일로 변경 (Outline Style + Icon)
 const IconButton = ({ onClick, icon, text, color }: { onClick: () => void, icon: string, text: string, color: string }) => {
@@ -718,9 +755,9 @@ const IconButton = ({ onClick, icon, text, color }: { onClick: () => void, icon:
       onMouseLeave={() => setHover(false)}
       style={{
         backgroundColor: hover ? theme.colors.bgHover : "white",
-        color: color || theme.colors.textMain, // color prop이 있으면 사용(브랜드 컬러 등), 없으면 기본 텍스트
+        color: color || theme.colors.textMain,
         border: `1px solid ${color || theme.colors.border}`,
-        borderRadius: "20px", // 둥근 캡슐 형태
+        borderRadius: "20px",
         padding: "6px 12px",
         fontSize: "13px",
         fontWeight: "600",
@@ -796,19 +833,3 @@ const InfoRow = ({ label, value, onCopy }: { label: string, value: string, onCop
     </div>
   </div>
 );
-
-
-const thStyle: CSSProperties = { padding: "10px", fontWeight: "600", color: theme.colors.textMain, fontSize: "13px", borderBottom: `1px solid ${theme.colors.border}` };
-const tdStyle: CSSProperties = { padding: "10px", color: "#201f1e", fontSize: "14px" }; // keep specific dark gray for grid text
-const overlayStyle: CSSProperties = {
-  position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-  backgroundColor: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000
-};
-const popupStyle: CSSProperties = {
-  width: "550px", backgroundColor: theme.colors.bgWhite, borderRadius: theme.radius.medium,
-  boxShadow: theme.shadow.popup, position: "relative", overflow: "hidden"
-};
-const closeBtnStyle: CSSProperties = {
-  position: "absolute", top: "15px", right: "15px", background: "none", border: "none",
-  fontSize: "20px", cursor: "pointer", color: theme.colors.textSecondary
-};

@@ -9,6 +9,7 @@
         "README.md"
     ],
     "dependencies": {
+        "@fluentui/react-components": "^9.72.10",
         "@microsoft/microsoft-graph-client": "^3.0.7",
         "@microsoft/teams.api": "^2.0.0",
         "@microsoft/teams.apps": "^2.0.0",

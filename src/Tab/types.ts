@@ -29,3 +29,20 @@ export interface OrgTreeNode extends OrgData {
     children: OrgTreeNode[];
     hasChildren: boolean; // UI에서 + 아이콘 표시 여부 판단용
 }
+
+export interface UserPresence {
+    email: string;
+    availability: "Available" | "AvailableIdle" | "Away" | "BeRightBack" | "Busy" | "BusyIdle" | "DoNotDisturb" | "Offline" | "PresenceUnknown";
+    activity: "Available" | "Away" | "BeRightBack" | "Busy" | "DoNotDisturb" | "InACall" | "InAConferenceCall" | "Inactive" | "InAMeeting" | "Offline" | "OffWork" | "OutOfOffice" | "PresenceUnknown" | "Presenting" | "UrgentInterruptionsOnly";
+}
+
+export const PRESENCE_STATUS_MAP: Record<string, { text: string, color: string, icon?: string }> = {
+    "Available": { text: "대화 가능", color: "#6BB700" }, // Green
+    "Busy": { text: "다른 용무 중", color: "#C50F1F" },    // Red
+    "DoNotDisturb": { text: "방해 금지", color: "#C50F1F" }, // Red
+    "BeRightBack": { text: "곧 돌아올게", color: "#FFA500" }, // Yellow/Orange
+    "Away": { text: "자리 비움", color: "#FFA500" },          // Yellow/Orange
+    "Offline": { text: "오프라인", color: "#8A8886" },         // Grey
+    "OffWork": { text: "오프라인", color: "#8A8886" },        // Grey
+};
+
