@@ -16,6 +16,8 @@ import copyIcon from "../assets/copy.png";
 import { useUserPresence } from "./hooks/useUserPresence"; // Presence Hook
 import { PresenceBadge } from "./components/PresenceBadge"; // Badge Component
 import { useTeamsAuth } from "./hooks/useTeamsAuth";
+// Fluent Icons
+import { Call24Regular, Chat24Regular, Calendar24Regular, Mail24Regular } from "@fluentui/react-icons";
 
 /**
  * OrgChart 컴포넌트 메인
@@ -41,7 +43,6 @@ export default function OrgChart() {
   const [users, setUsers] = useState<Employee[]>([]);
 
   // 1.1 현재 표시된 사용자의 이메일 목록 추출 (Presence 조회를 위해)
-  // [변수명 변경] userEmails -> gridUserEmails
   const gridUserEmails = useMemo(() => users.map(u => u.email).filter(Boolean), [users]);
 
   // --- 커스텀 훅 (Custom Hooks) ---
@@ -61,7 +62,7 @@ export default function OrgChart() {
   // 4. 선택된 Org ID 관리
   const [selectedOrgId, setSelectedOrgId] = useState<string>("");
 
-  // [새로운] OrgTree에서 상태 끌어올리기 (State Lifted)
+  // OrgTree에서 상태 끌어올리기 (State Lifted)
   const [companyCode, setCompanyCode] = useState("AD");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
@@ -225,8 +226,8 @@ export default function OrgChart() {
 
       // 대체 로직: 복원되지 않았을 경우 (첫 로드 또는 캐시 무효), 기본값 설정
       if (!restored) {
-        // [수정] '내 조직' 우선 선택 로직
-        let defaultOrgId = "14636"; // 기본값 (인사총무팀)
+        // '내 조직' 우선 선택 로직
+        let defaultOrgId = "14636"; // 기본값 (HR/DMS시스템팀)
 
         // 1. 로그인한 사용자 찾기
         if (currentUserEmail) {
@@ -237,11 +238,12 @@ export default function OrgChart() {
             const myOrg = orgMap.get(me.orgId);
             if (myOrg && myOrg.companyCode) {
               setCompanyCode(myOrg.companyCode);
-            } else if (me.companyName) {
-              if (me.companyName.includes("아성다이소")) setCompanyCode("AD");
-              else if (me.companyName.includes("HMP")) setCompanyCode("AH");
-              else if (me.companyName === "아성") setCompanyCode("AS");
             }
+            // else if (me.companyName) {
+            //   if (me.companyName.includes("아성다이소")) setCompanyCode("AD");
+            //   else if (me.companyName.includes("HMP")) setCompanyCode("AH");
+            //   else if (me.companyName === "아성") setCompanyCode("AS");
+            // }
           }
         }
 
@@ -251,8 +253,8 @@ export default function OrgChart() {
           const orgInfo = orgMap.get(defaultOrgId);
           if (orgInfo) setCurrentOrg(orgInfo);
 
-          // [수정] 선택된 부서의 상위 경로 모두 펼치기 (getAllAncestorIds 사용)
-          const ancestors = getAllAncestorIds(defaultOrgId, orgList);
+          // 선택된 부서의 상위 경로 모두 펼치기 (getAllAncestorIds 사용)
+          const ancestors = getAllAncestorIds(defaultOrgId, orgMap);
           setExpandedIds(ancestors);
 
         } else if (tree.length > 0) {
@@ -293,7 +295,7 @@ export default function OrgChart() {
       timestamp: Date.now()
     };
 
-    // [수정] setCache 사용
+    // setCache 사용
     setCache("orgChartUserState", stateToSave);
 
     console.log("캐시 저장됨", stateToSave);
@@ -487,6 +489,16 @@ export default function OrgChart() {
 
   const handleRowClick = (emp: Employee) => {
     setSelectedUser(emp);
+    // 해당 부서의 상위 경로를 찾아 펼쳐주어야 트리에서 포커싱/스크롤이 가능함
+    // 기존 expandedIds에 추가하는 것이 자연스러움 (또는 다 접고 여기만 펼칠 수도 있음. 정책에 따라 결정)
+    // 여기서는 "사용자가 찾아서 들어간 것"이므로 기존 것을 유지하면서 추가하는 방향으로 구현
+    const ancestors = getAllAncestorIds(emp.orgId, orgMap);
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      ancestors.forEach(id => next.add(id));
+      return next;
+    });
+
     // 해당 사용자의 소속 부서를 트리에 반영 (전체 접고 해당 경로만 펼침)
     setSelectedOrgId(emp.orgId);
   };
@@ -566,7 +578,7 @@ export default function OrgChart() {
             background: #888; 
           }
           ::-webkit-scrollbar-track {
-            background: #f3f2f1; 
+            background: theme.colors.bgMain; 
           }
         `}</style>
 
@@ -711,13 +723,13 @@ export default function OrgChart() {
             {/* 패널 헤더 */}
             <div style={{ marginBottom: "10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <span style={{ fontSize: "16px", fontWeight: "bold", color: "#323130" }}>
+                <span style={{ fontSize: "16px", fontWeight: "bold", color: theme.colors.textMain }}>
                   선택된 대화상대 <span style={{ color: "#6264A7" }}>{checkedIds.size}명</span>
                 </span>
                 {rightPanelCheckedIds.size > 0 && (
                   <button
                     onClick={deleteSelectedRightPanel}
-                    style={{ border: "none", background: "none", color: "#d13438", fontSize: "12px", cursor: "pointer", fontWeight: "600" }}
+                    style={{ border: "none", background: "none", color: theme.colors.danger, fontSize: "12px", cursor: "pointer", fontWeight: "600" }}
                   >
                     선택 삭제 ({rightPanelCheckedIds.size})
                   </button>
@@ -725,9 +737,9 @@ export default function OrgChart() {
               </div>
 
               <div style={{ display: "flex", gap: "5px" }}>
-                <IconButton onClick={() => openDeepLink('call', getCheckedEmployees().map(e => e.email))} icon="📞" text="통화" color={theme.colors.primary} />
-                <IconButton onClick={() => openDeepLink('chat', getCheckedEmployees().map(e => e.email))} icon="💬" text="채팅" color={theme.colors.primary} />
-                <IconButton onClick={() => openDeepLink('meeting', getCheckedEmployees().map(e => e.email))} icon="📅" text="모임" color={theme.colors.primary} />
+                <IconButton onClick={() => openDeepLink('call', getCheckedEmployees().map(e => e.email))} icon={<Call24Regular />} text="통화" color={theme.colors.primary} />
+                <IconButton onClick={() => openDeepLink('chat', getCheckedEmployees().map(e => e.email))} icon={<Chat24Regular />} text="채팅" color={theme.colors.primary} />
+                <IconButton onClick={() => openDeepLink('meeting', getCheckedEmployees().map(e => e.email))} icon={<Calendar24Regular />} text="모임" color={theme.colors.primary} />
                 {checkedIds.size > 0 && (
                   <button
                     onClick={() => setCheckedIds(new Set())}
@@ -781,8 +793,8 @@ export default function OrgChart() {
                       />
                       <AvatarWithStatus name={emp.name} photoUrl={userPhotos[emp.email]} status={presenceMap[emp.email]} size={24} />
                       <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        <div style={{ fontWeight: "bold", fontSize: "13px", color: "#323130" }}>{emp.name}</div>
-                        <div style={{ fontSize: "11px", color: "#605e5c" }}>{emp.position}</div>
+                        <div style={{ fontWeight: "bold", fontSize: "13px", color: theme.colors.textMain }}>{emp.name}</div>
+                        <div style={{ fontSize: "11px", color: theme.colors.textSecondary }}>{emp.position}</div>
                       </div>
                     </div>
                     <div style={{ fontSize: "11px", color: "#605e5c", marginTop: "auto", paddingLeft: "4px" }}>
@@ -791,7 +803,7 @@ export default function OrgChart() {
                     {/* 개별 삭제 버튼 ('X') */}
                     <button
                       onClick={(e) => { e.stopPropagation(); toggleCheckGrid(emp.id); }}
-                      style={{ position: "absolute", top: "2px", right: "2px", border: "none", background: "none", cursor: "pointer", color: "#a19f9d", fontSize: "14px" }}
+                      style={{ position: "absolute", top: "2px", right: "2px", border: "none", background: "none", cursor: "pointer", color: theme.colors.textDisabled, fontSize: "14px" }}
                     >
                       ✕
                     </button>
@@ -825,20 +837,20 @@ export default function OrgChart() {
                   </div>
                 </div>
                 {/* 정보 텍스트 */}
-                <div style={{ flex: 1, color: "#323130" }}>
+                <div style={{ flex: 1, color: theme.colors.textMain }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "20px" }}>
                     <div style={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
-                      <span style={{ fontSize: "20px", fontWeight: "bold", color: "#323130" }}>{selectedUser.name}</span>
-                      <span style={{ fontSize: "14px", color: "#605e5c" }}>{selectedUser.position}</span>
+                      <span style={{ fontSize: "20px", fontWeight: "bold", color: theme.colors.textMain }}>{selectedUser.name}</span>
+                      <span style={{ fontSize: "14px", color: theme.colors.textSecondary }}>{selectedUser.position}</span>
                     </div>
-                    <div style={{ fontSize: "14px", color: "#605e5c" }}>
+                    <div style={{ fontSize: "14px", color: theme.colors.textSecondary }}>
                       <strong>{selectedUser.companyName}</strong> | {selectedUser.department} | {selectedUser.role}
                     </div>
                     {/* 전체 부서 경로 표시 */}
                     <div
                       style={{
                         fontSize: "13px",
-                        color: "#a19f9d",
+                        color: theme.colors.textDisabled,
                         marginTop: "4px",
                         whiteSpace: "nowrap",
                         overflow: "hidden",
@@ -854,10 +866,10 @@ export default function OrgChart() {
 
                   {/* 퀵 액션 버튼들 */}
                   <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
-                    <CircleButton onClick={() => openDeepLink('call', [selectedUser.email])} icon="📞" />
-                    <CircleButton onClick={() => openDeepLink('mail', [selectedUser.email])} icon="✉️" />
-                    <CircleButton onClick={() => openDeepLink('chat', [selectedUser.email])} icon="💬" />
-                    <CircleButton onClick={() => openDeepLink('meeting', [selectedUser.email])} icon="📅" />
+                    <CircleButton onClick={() => openDeepLink('call', [selectedUser.email])} icon={<Call24Regular />} />
+                    <CircleButton onClick={() => openDeepLink('mail', [selectedUser.email])} icon={<Mail24Regular />} />
+                    <CircleButton onClick={() => openDeepLink('chat', [selectedUser.email])} icon={<Chat24Regular />} />
+                    <CircleButton onClick={() => openDeepLink('meeting', [selectedUser.email])} icon={<Calendar24Regular />} />
                   </div>
 
                   {/* 상세 연락처 정보 그리드 */}
@@ -901,8 +913,8 @@ const closeBtnStyle: CSSProperties = {
   fontSize: "20px", cursor: "pointer", color: theme.colors.textSecondary
 };
 
-// 세련된 버튼 스타일로 변경 (Outline Style + Icon)
-const IconButton = ({ onClick, icon, text, color }: { onClick: () => void, icon: string, text: string, color: string }) => {
+// [Styles] Fluent Icons 에서 사용
+const IconButton = ({ onClick, icon, text, color }: { onClick: () => void, icon: React.ReactNode, text: string, color: string }) => {
   const [hover, setHover] = useState(false);
 
   return (
@@ -927,13 +939,13 @@ const IconButton = ({ onClick, icon, text, color }: { onClick: () => void, icon:
         outline: "none",
       }}
     >
-      <span style={{ fontSize: "14px" }}>{icon}</span> {text}
+      <span style={{ display: "flex", alignItems: "center" }}>{icon}</span> {text}
     </button>
   );
 };
 
-// 원형 버튼도 스타일 통일
-const CircleButton = ({ onClick, icon }: { onClick: () => void, icon: string }) => {
+// Circle Button Style
+const CircleButton = ({ onClick, icon }: { onClick: () => void, icon: React.ReactNode }) => {
   const [hover, setHover] = useState(false);
 
   return (

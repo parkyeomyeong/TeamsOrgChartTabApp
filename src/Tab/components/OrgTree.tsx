@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { buildOrgTree, filterTree, getAllIds } from "../utils/orgTreeUtils";
-import { OrgData, OrgTreeNode } from "../types"; // [Update] Import from centralized types
-import folderIcon from "../../assets/folder_icon.png";
+import { OrgData, OrgTreeNode } from "../types"; // Import from centralized types
+// import folderIcon from "../../assets/folder_icon.png"; // [삭제] 이미지 아이콘 제거
+import { Folder24Regular, FolderOpen24Regular, PeopleTeam24Regular, Building24Regular } from "@fluentui/react-icons";
 import { theme } from "../constants/theme";
 
 // --- 스타일 상수 (CSS-in-JS 방식) ---
@@ -32,8 +33,8 @@ const companySelectStyle: React.CSSProperties = {
     borderRadius: "4px",
     fontSize: "13px",
     outline: "none",
-    color: "#333",
-    backgroundColor: "#fff",
+    color: theme.colors.textMain,
+    backgroundColor: theme.colors.bgWhite,
 };
 
 const searchRowStyle: React.CSSProperties = {
@@ -79,7 +80,7 @@ const searchButtonStyle: React.CSSProperties = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    color: "#666",
+    color: theme.colors.textSecondary,
     width: "24px",
     height: "24px",
 };
@@ -117,24 +118,7 @@ const folderIconContainerStyle: React.CSSProperties = {
     flexShrink: 0, // 아이콘 찌그러짐 방지
 };
 
-const folderImgStyle: React.CSSProperties = {
-    width: "100%",
-    height: "100%",
-    objectFit: "contain",
-};
-
-const overlayIndicatorStyle: React.CSSProperties = {
-    position: "absolute",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -70%)",
-    color: "#000",
-    fontSize: "14px",
-    fontWeight: "bold",
-    pointerEvents: "none",
-    lineHeight: 1,
-    marginTop: "2px",
-};
+// [삭제] folderImgStyle, overlayIndicatorStyle 제거됨
 
 // 검색 카테고리
 const SEARCH_CATEGORIES = [
@@ -217,11 +201,10 @@ export const OrgTreeView: React.FC<OrgTreeViewProps> = ({
 
     }, [companyCode, orgList]);
 
-    // [삭제됨] LocalStorage 로직 (부모 컴포넌트에서 지속성 처리)
 
-    // [삭제됨] 현재 선택 항목 자동 확장 로직 (부모 컴포넌트가 expandedIds prop을 통해 처리)
-    // [삭제됨] 자동 스크롤 로직 (부모 컴포넌트로 이동 또는 유지?)
-    // 자동 스크롤은 DOM ID에 의해 작동하므로, 선택 prop에 기반한 순수 UI 효과로서 여기 유지하는 것이 좋습니다.
+
+    // 자동 스크롤 로직: selectedOrgId가 변경되면 해당 노드로 스크롤 이동
+    // (단, 해당 노드가 화면에 렌더링되어 있어야 하므로 expandedIds가 선행 업데이트 되어야 함)
     useEffect(() => {
         if (selectedOrgId) {
             setTimeout(() => {
@@ -283,8 +266,8 @@ export const OrgTreeView: React.FC<OrgTreeViewProps> = ({
         onSearchTermChange(e.target.value);
     };
 
-    // [삭제됨] 검색 시 자동 확장 (부모/Effect 로직)
-    // 하지만 필터링된 트리가 변경되었을 때 "모두 펼치기"는 UI 로직에 가깝습니다.
+    // 검색 시 자동 확장 (부모/Effect 로직)
+    // 필터링된 트리가 변경되었을 때 "모두 펼치기"는 UI 로직에 가깝습니다.
     // filteredTree가 변할 때 -> expandedIds 업데이트
     // 이것도 부모 컴포넌트로 올릴 수 있지만, filteredTree가 여기서 계산되므로
     // 여기서 계산된 ID들을 부모로 올려주는 Effect를 사용합니다.
@@ -438,11 +421,18 @@ const OrgTreeItem: React.FC<OrgTreeItemProps> = ({ node, depth, expandedIds, sel
             >
                 <div style={itemContentStyle}>
                     <div style={folderIconContainerStyle} onClick={handleIconClick}>
-                        <img src={folderIcon} alt="folder" style={folderImgStyle} />
-                        {hasChildren && (
-                            <span style={overlayIndicatorStyle}>
-                                {isExpanded ? "-" : "+"}
-                            </span>
+                        {node.orgLevel === 0 ? (
+                            // 회사 (Root)
+                            <Building24Regular color={theme.colors.primary} />
+                        ) : hasChildren ? (
+                            isExpanded ? (
+                                <FolderOpen24Regular color={theme.colors.primary} />
+                            ) : (
+                                <Folder24Regular color={theme.colors.primary} />
+                            )
+                        ) : (
+                            // 자식이 없는 경우 (팀/말단 조직)
+                            <PeopleTeam24Regular color={theme.colors.primary} />
                         )}
                     </div>
 
@@ -461,7 +451,7 @@ const OrgTreeItem: React.FC<OrgTreeItemProps> = ({ node, depth, expandedIds, sel
                         <div style={{ marginLeft: "8px" }}>
                             {highlightText(node.orgName, highlightTerm)}
                             {/* 인원수 표시 */}
-                            <span style={{ fontSize: "12px", color: theme.colors.textSecondary, marginLeft: "4px" }}>
+                            <span style={{ fontSize: "12px", color: isSelected || isHovered ? theme.colors.primary : theme.colors.textSecondary, marginLeft: "4px" }}>
                                 ({count})
                             </span>
                         </div>

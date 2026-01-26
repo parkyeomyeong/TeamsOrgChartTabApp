@@ -80,7 +80,7 @@ export const filterTree = (nodes: OrgTreeNode[], keyword: string, searchFields?:
         }
 
         // 현재 노드가 검색어에 매칭되거나 자식 노드가 있는 경우 살아남음
-        // => 자식 노드가 있는 경우 살아남 는 이유는 살아남은 자식이 검색어에 매칭되는 경우이기 때문에
+        // => 자식 노드가 있는 경우 살아남 는 이유는 살아남은 자식이 검색어에 매칭되는 경우만 있기 때문
         // Boottom-Up 방식으로!! 했음
         if (isMatch || filteredChildren.length > 0) {
             return { ...node, children: filteredChildren, hasChildren: filteredChildren.length > 0 };
@@ -178,11 +178,11 @@ export const getAllDescendantIds = (targetOrgId: string, allOrgList: OrgData[]):
 /**
  * 특정 부서(targetOrgId)의 상위 모든 부서 ID 목록을 반환합니다. (본인 포함)
  * => '내 조직' 선택 시 해당 경로를 트리에서 펼치기 위한 용도
+ * @param targetOrgId 기준 부서 ID
+ * @param orgMap 전체 조직 데이터 (Map)
  */
-export const getAllAncestorIds = (targetOrgId: string, allOrgList: OrgData[]): Set<string> => {
+export const getAllAncestorIds = (targetOrgId: string, orgMap: Map<string, OrgData>): Set<string> => {
     const ancestors = new Set<string>();
-    // 검색 효율을 위해 Map 생성 (일회성 호출이므로 매번 생성해도 무방)
-    const orgMap = new Map(allOrgList.map(org => [org.orgId, org]));
 
     let currentId = targetOrgId;
     while (currentId && orgMap.has(currentId)) {
