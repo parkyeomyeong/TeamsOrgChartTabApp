@@ -47,18 +47,18 @@ export const useOrgChartData = (token: string) => {
                 const mappedEmpList: Employee[] = result.empList.map((item: any) => ({
                     id: item.empId || item.id,
                     name: item.empNm || item.name,
-                    position: item.jobTitleDesc || item.position || "-",
-                    role: item.posisionDesc || item.role || "-",
-                    department: item.orgNm || item.department || "-",
+                    position: item.jobTitleDesc || "-",
+                    role: item.posisionDesc || "-",
+                    department: item.orgNm || "-",
                     orgFullName: item.orgFullName || "-",
                     orgId: item.orgId,
-                    extension: item.offcTelNo || item.extension || "-",
-                    mobile: item.moblTelNo || item.mobile || "-",
-                    email: item.emailAddr || item.email || "",
+                    extension: item.offcTelNo || "-",
+                    mobile: item.moblTelNo || "-",
+                    email: item.emailAddr || "",
                     companyName: item.compCd === "AD" ? "아성다이소"
                         : item.compCd === "AS" ? "아성"
                             : item.compCd === "AH" ? "아성HMP"
-                                : item.companyName || item.compCd || "아성다이소",
+                                : item.compCd,
                 }));
 
                 const finalData = {

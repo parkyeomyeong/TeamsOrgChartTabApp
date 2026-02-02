@@ -399,7 +399,7 @@ export default function OrgChart() {
       if (selectedOrgId) {
         setViewMode('BROWSE');
         updateEmployeeList(selectedOrgId);
-        const orgInfo = orgList.find(o => o.orgId === selectedOrgId);
+        const orgInfo = orgMap.get(selectedOrgId); //여기 map으로 변경
         if (orgInfo) setCurrentOrg(orgInfo);
       } else {
         setUsers([]);
