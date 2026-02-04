@@ -1,10 +1,10 @@
 {
     "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.24/MicrosoftTeams.schema.json",
     "manifestVersion": "1.24",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "id": "${{TEAMS_APP_ID}}",
     "developer": {
-        "name": "My App, Inc.",
+        "name": "Daiso_it",
         "websiteUrl": "https://www.example.com",
         "privacyUrl": "https://www.example.com/privacy",
         "termsOfUseUrl": "https://www.example.com/termsofuse"
@@ -14,12 +14,12 @@
         "outline": "outline.png"
     },
     "name": {
-        "short": "AsungOrgChart${{APP_NAME_SUFFIX}}",
-        "full": "Full name for AsungOrgChart"
+        "short": "AsungOrgChart",
+        "full": "OrgChartTabApp for AsungGroup"
     },
     "description": {
-        "short": "Short description of AsungOrgChart",
-        "full": "Full description of AsungOrgChart"
+        "short": "아성 조직도앱",
+        "full": "아성 그룹을 위한 조직도 앱입니다."
     },
     "accentColor": "#FFFFFF",
     "bots": [],
@@ -28,8 +28,8 @@
         {
             "entityId": "index0",
             "name": "Home",
-            "contentUrl": "${{TAB_ENDPOINT}}/tabs/home",
-            "websiteUrl": "${{TAB_ENDPOINT}}/tabs/home",
+            "contentUrl": "${{TAB_ENDPOINT}}/index.html",
+            "websiteUrl": "${{TAB_ENDPOINT}}/index.html",
             "scopes": [
                 "personal",
                 "groupChat",

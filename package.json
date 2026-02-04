@@ -13,7 +13,6 @@
         "@microsoft/microsoft-graph-client": "^3.0.7",
         "@microsoft/teams-js": "^2.48.0",
         "@microsoft/teams.api": "^2.0.0",
-        "@microsoft/teams.apps": "^2.0.0",
         "@microsoft/teams.cards": "^2.0.0",
         "@microsoft/teams.client": "^2.0.0",
         "@microsoft/teams.common": "^2.0.0",
@@ -30,19 +29,16 @@
         "@vitejs/plugin-react": "^4.3.4",
         "dotenv": "^16.4.5",
         "env-cmd": "^11.0.0",
-        "nodemon": "^3.1.4",
         "rimraf": "^6.0.1",
-        "tsup": "^8.4.0",
         "typescript": "^5.4.5",
         "vite": "^6.2.0"
     },
     "scripts": {
-        "dev:teamsfx": "env-cmd --silent -f .localConfigs npm run start",
+        "dev:teamsfx": "env-cmd --silent -f .localConfigs vite",
         "clean": "rimraf ./dist",
-        "start": "nodemon",
-        "prestart": "npm run build:frontend",
-        "build": "tsup && npm run build:frontend",
-        "build:frontend": "vite build --outDir dist/client",
-        "watch:frontend": "vite build --watch --outDir dist/client"
+        "start": "vite",
+        "build": "npm run build:frontend",
+        "build:frontend": "vite build --outDir dist",
+        "watch:frontend": "vite build --watch --outDir dist"
     }
 }
