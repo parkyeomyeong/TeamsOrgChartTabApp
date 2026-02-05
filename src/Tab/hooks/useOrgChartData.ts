@@ -59,6 +59,7 @@ export const useOrgChartData = (token: string) => {
                         : item.compCd === "AS" ? "아성"
                             : item.compCd === "AH" ? "아성HMP"
                                 : item.compCd,
+                    companyCode: item.compCd, // 회사 코드 매핑
                 }));
 
                 const finalData = {

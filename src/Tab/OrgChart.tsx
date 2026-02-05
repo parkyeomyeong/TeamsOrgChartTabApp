@@ -27,10 +27,10 @@ export default function OrgChart() {
   // const { themeString } = useContext(TeamsFxContext);
 
   // SSO 토큰 (1회성 호출)
-  const { token, currentUserEmail, isAuthLoading } = useTeamsAuth();
+  const { token, currentUserEmail, isAuthLoading } = useTeamsAuth(); // 맨 처음 SSO 인증 + 본인 정보 가져오기
 
   // --- API 데이터 조회 ---
-  const { data, isLoading: isApiLoading } = useOrgChartData(token); // 맨 처음 SSO 인증 + 조직정보 + 직원정보 가져오는 출발 훅 
+  const { data, isLoading: isApiLoading } = useOrgChartData(token); // 조직정보 + 직원정보 가져오는 출발 훅 
   const orgList = data?.orgList || [];
   const empList = data?.empList || [];
 
@@ -414,6 +414,11 @@ export default function OrgChart() {
 
     // 검색 로직
     const filtered = empList.filter((emp: Employee) => {
+      // 1. 회사 코드 필터링
+      if (companyCode !== 'ALL' && emp.companyCode !== companyCode) {
+        return false;
+      }
+
       let value = "";
       switch (category) {
         case 'user': value = emp.name; break;
