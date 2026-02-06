@@ -188,9 +188,14 @@ export default function OrgChart() {
 
             // Trigger Search immediately
             if (sTerm) {
-              // Duplicate Search Logic (Should be extracted but doing inline for now to access closures)
+              // 중복된 검색 로직 (나중에 추출해야 하지만 클로저 접근을 위해 인라인으로 유지)
               const lowerTerm = sTerm.toLowerCase();
               const filtered = empList.filter((emp: Employee) => {
+                // 1. 회사 코드 필터링
+                if (companyCode !== 'ALL' && emp.companyCode !== companyCode) {
+                  return false;
+                }
+
                 let value = "";
                 switch (sCat) {
                   case 'user': value = emp.name; break;
