@@ -10,9 +10,12 @@ export default defineConfig({
   },
   server: {
     port: 53000,
-    https: {
-      key: fs.readFileSync(process.env.SSL_KEY_FILE),
-      cert: fs.readFileSync(process.env.SSL_CRT_FILE),
-    },
+    https:
+      process.env.SSL_KEY_FILE && process.env.SSL_CRT_FILE
+        ? {
+          key: fs.readFileSync(process.env.SSL_KEY_FILE),
+          cert: fs.readFileSync(process.env.SSL_CRT_FILE),
+        }
+        : undefined,
   },
 });
