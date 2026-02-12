@@ -128,6 +128,7 @@ const SEARCH_CATEGORIES = [
     { value: "mobile", label: "핸드폰" },
     { value: "position", label: "직위" },
     { value: "jobTitle", label: "직책" },
+    { value: "email", label: "이메일" },
 ];
 
 export interface OrgTreeViewProps {

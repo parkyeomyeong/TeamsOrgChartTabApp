@@ -203,6 +203,7 @@ export default function OrgChart() {
                   case 'mobile': value = emp.mobile; break;
                   case 'position': value = emp.position; break;
                   case 'jobTitle': value = emp.role; break;
+                  case 'email': value = emp.email; break;
                   default: return false;
                 }
                 return value && String(value).toLowerCase().includes(lowerTerm);
@@ -431,6 +432,7 @@ export default function OrgChart() {
         case 'mobile': value = emp.mobile; break;
         case 'position': value = emp.position; break;
         case 'jobTitle': value = emp.role; break;
+        case 'email': value = emp.email; break;
         default: return false;
       }
       return value && String(value).toLowerCase().includes(lowerTerm);
@@ -764,6 +766,13 @@ export default function OrgChart() {
             {/* 가로 스크롤 카드 영역 */}
             <div
               ref={bottomPanelRef}
+              onWheel={(e) => {
+                // 일반 마우스 휠(세로)을 가로 스크롤로 변환
+                if (e.deltaY !== 0) {
+                  e.currentTarget.scrollLeft += e.deltaY;
+                  e.preventDefault();
+                }
+              }}
               style={{
                 flex: 1,
                 display: "flex",
