@@ -441,7 +441,7 @@ const OrgTreeItem: React.FC<OrgTreeItemProps> = ({ node, depth, expandedIds, sel
                         style={{
                             fontSize: "14px",
                             color: isSelected || isHovered ? theme.colors.primary : theme.colors.textMain,
-                            fontWeight: isSelected ? "bold" : "normal",
+                            fontWeight: isSelected || isHovered ? "bold" : "normal",
                             cursor: "pointer",
                             transition: "color 0.2s"
                         }}

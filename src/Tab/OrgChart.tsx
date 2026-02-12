@@ -67,9 +67,9 @@ export default function OrgChart() {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   // 트리 검색 상태
-  const [treeSearchTerm, setTreeSearchTerm] = useState("");
-  const [treeSearchCategory, setTreeSearchCategory] = useState("user");
-  const [activeTreeSearchTerm, setActiveTreeSearchTerm] = useState("");
+  const [treeSearchTerm, setTreeSearchTerm] = useState(""); //입력창에 실시간으로 타이핑되는거
+  const [treeSearchCategory, setTreeSearchCategory] = useState("user"); //드롭다운에서 선택한 검색 카테고리
+  const [activeTreeSearchTerm, setActiveTreeSearchTerm] = useState(""); // 실제로 검색실행된 검색어(검색버튼 눌릴때만 업데이트!)
 
   // 그리드 검색 상태 (검색 결과 복원용)
   const [gridSearchTerm, setGridSearchTerm] = useState("");
