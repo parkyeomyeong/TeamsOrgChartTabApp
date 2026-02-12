@@ -609,8 +609,9 @@ export default function OrgChart() {
             flexShrink: 0,
           }}
         >
-          <h2 style={{ fontSize: "18px", fontWeight: "600", marginBottom: "16px", color: theme.colors.textMain, whiteSpace: "nowrap" }}>
+          <h2 style={{ fontSize: "18px", fontWeight: "600", marginBottom: "16px", color: theme.colors.textMain, whiteSpace: "nowrap", display: "flex", alignItems: "baseline", gap: "8px" }}>
             조직도
+            <span style={{ fontSize: "11px", fontWeight: "normal", color: "#a19f9d" }}>문의사항 : 박여명 주임(9348)</span>
           </h2>
 
           <div style={{ flex: 1, overflow: "auto" }}>
