@@ -45,23 +45,38 @@ export const useOrgChartData = (token: string) => {
 
                 // API 응답 매핑 (레거시 DB 컬럼 -> 프론트엔드 타입)
                 const mappedEmpList: Employee[] = result.empList.map((item: any) => ({
-                    id: item.empId || item.id,
-                    name: item.empNm || item.name,
-                    position: item.jobTitleDesc || "-",
-                    role: item.posisionDesc || "-",
-                    department: item.orgNm || "-",
-                    orgFullName: item.orgFullName || "-",
-                    orgId: item.orgId,
-                    extension: item.offcTelNo || "-",
-                    mobile: item.moblTelNo || "-",
-                    email: item.emailAddr || "",
-                    companyName: item.compCd === "AD" ? "아성다이소"
-                        : item.compCd === "AS" ? "아성"
-                            : item.compCd === "AH" ? "아성HMP"
-                                : item.compCd,
-                    companyCode: item.compCd, // 회사 코드 매핑
-                    description: item.dutyDesc || "-", // 담당업무
+                    ...item,
+                    position: item.position || '-',
+                    role: item.role || '-',
+                    department: item.department || '-',
+                    orgFullName: item.orgFullName || '-',
+                    extension: item.extension || '-',
+                    mobile: item.mobile || '-',
+                    email: item.email || '',
+                    companyName: item.companyCode === 'AD' ? '아성다이소'
+                        : item.companyCode === 'AS' ? '아성'
+                            : item.companyCode === 'AH' ? '아성HMP'
+                                : item.companyCode,
+                    description: item.description || '-',
                 }));
+                // const mappedEmpList: Employee[] = result.empList.map((item: any) => ({
+                //     id: item.empId || item.id,
+                //     name: item.empNm || item.name,
+                //     position: item.jobTitleDesc || "-",
+                //     role: item.posisionDesc || "-",
+                //     department: item.orgNm || "-",
+                //     orgFullName: item.orgFullName || "-",
+                //     orgId: item.orgId,
+                //     extension: item.offcTelNo || "-",
+                //     mobile: item.moblTelNo || "-",
+                //     email: item.emailAddr || "",
+                //     companyName: item.compCd === "AD" ? "아성다이소"
+                //         : item.compCd === "AS" ? "아성"
+                //             : item.compCd === "AH" ? "아성HMP"
+                //                 : item.compCd,
+                //     companyCode: item.compCd, // 회사 코드 매핑
+                //     description: item.dutyDesc || "-", // 담당업무
+                // }));
 
                 const finalData = {
                     orgList: result.orgList,
