@@ -882,6 +882,10 @@ export default function OrgChart() {
                     >
                       {selectedUser.orgFullName.replace(/ /g, " > ")}
                     </div>
+                    {/* 담당업무 */}
+                    <div style={{ fontSize: "13px", color: theme.colors.textSecondary, marginTop: "4px" }}>
+                      <strong>담당업무</strong> : {selectedUser.description || "-"}
+                    </div>
                   </div>
 
                   {/* 퀵 액션 버튼들 */}

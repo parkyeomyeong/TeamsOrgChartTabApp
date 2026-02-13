@@ -60,6 +60,7 @@ export const useOrgChartData = (token: string) => {
                             : item.compCd === "AH" ? "아성HMP"
                                 : item.compCd,
                     companyCode: item.compCd, // 회사 코드 매핑
+                    description: item.dutyDesc || "-", // 담당업무
                 }));
 
                 const finalData = {

@@ -12,6 +12,7 @@ export interface Employee {
     email: string; // 이메일 주소
     companyName: string; // 회사명 (e.g. 아성다이소)
     companyCode: string; // 회사 코드 (e.g. AD)
+    description: string; // 담당업무
 }
 
 // 조직도 데이터 인터페이스
