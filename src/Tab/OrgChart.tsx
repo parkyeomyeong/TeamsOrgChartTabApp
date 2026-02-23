@@ -140,7 +140,7 @@ export default function OrgChart() {
       .map((emp) => ({
         ...emp, // 이미 API에서 Employee 형태로 받아왔다고 가정
         orgFullName: orgMap.get(emp.orgId)?.orgFullName || "-",
-        companyName: emp.companyName || (emp.orgId.startsWith("AD") ? "아성다이소" : "아성"), // 회사명 폴백 로직 필요 시 유지
+        companyName: emp.companyName || emp.companyCode,
       }));
     setUsers(filtered);
   };

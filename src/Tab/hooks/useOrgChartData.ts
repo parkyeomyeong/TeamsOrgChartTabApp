@@ -53,10 +53,7 @@ export const useOrgChartData = (token: string) => {
                     extension: item.extension || '-',
                     mobile: item.mobile || '-',
                     email: item.email || '',
-                    companyName: item.companyCode === 'AD' ? '아성다이소'
-                        : item.companyCode === 'AS' ? '아성'
-                            : item.companyCode === 'AH' ? '아성HMP'
-                                : item.companyCode,
+                    companyName: item.companyName || item.companyCode,
                     description: item.description || '-',
                 }));
                 // const mappedEmpList: Employee[] = result.empList.map((item: any) => ({
