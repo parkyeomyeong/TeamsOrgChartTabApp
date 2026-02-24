@@ -22,11 +22,10 @@ export const useTeamsAuth = () => {
                 console.log("✅ SSO Token Acquired (OBO Prep)");
                 setToken(t);
 
-                // [추가] 사용자 컨텍스트에서 이메일 가져오기
+                // 사용자 컨텍스트에서 이메일 가져오기
                 const context = await app.getContext();
                 if (context.user && context.user.userPrincipalName) {
                     setCurrentUserEmail(context.user.userPrincipalName);
-                    // console.log("✅ User Email: " + context.user.userPrincipalName);
                 }
             } catch (err) {
                 console.error("SSO Token Failure:", err);
