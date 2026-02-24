@@ -7,8 +7,8 @@ import { useUserPresence } from "./hooks/useUserPresence";
 import { PresenceBadge } from "./components/PresenceBadge";
 import { Toast } from "./components/Toast";
 import { Spinner } from "./components/Spinner";
-import { Employee, OrgData, OrgTreeNode } from "./types";
-import { buildOrgTree, getAllDescendantIds, calculateTotalCounts, getAllAncestorIds } from "./utils/orgTreeUtils";
+import { Employee, OrgData, OrgTreeNode, UserPresence } from "./types";
+import { buildOrgTree, calculateTotalCounts, getAllAncestorIds } from "./utils/orgTreeUtils";
 import { theme } from "./constants/theme";
 import copyIcon from "../assets/copy.png";
 import { Folder24Regular, FolderOpen24Regular, PeopleTeam24Regular, Building24Regular } from "@fluentui/react-icons";
@@ -100,25 +100,18 @@ export default function MobileOrgChart() {
         return ids;
     }, [activeSearchTerm, empList, companyCode, searchFilter]);
 
-    // Presence용 이메일 목록 (펼쳐진 조직 + 리프 노드의 직원들)
+    // Presence용 이메일 목록 (펼쳐진 조직의 직원들만)
     const visibleEmails = useMemo(() => {
         const emails: string[] = [];
-        const collectLeafEmails = (nodes: OrgTreeNode[]) => {
-            nodes.forEach(n => {
-                const isLeaf = !n.children || n.children.length === 0;
-                if (isLeaf || expandedIds.has(n.orgId)) {
-                    const emps = empByOrgId.get(n.orgId) || [];
-                    emps.forEach(e => { if (e.email) emails.push(e.email); });
-                }
-                if (n.children) collectLeafEmails(n.children);
-            });
-        };
-        collectLeafEmails(treeData);
+        expandedIds.forEach(orgId => {
+            const emps = empByOrgId.get(orgId) || [];
+            emps.forEach(e => { if (e.email) emails.push(e.email); });
+        });
         if (selectedUser?.email) emails.push(selectedUser.email);
         return [...new Set(emails)];
-    }, [expandedIds, empByOrgId, selectedUser, treeData]);
+    }, [expandedIds, empByOrgId, selectedUser]);
 
-    const { presenceMap } = useUserPresence(visibleEmails, token);
+    const { presenceMap } = useUserPresence(visibleEmails, token, true); // 모바일: 새 이메일만 요청
 
     // --- 루트(회사) 노드 ID 수집 헬퍼 ---
     const getRootIds = useCallback((tree: OrgTreeNode[]) => {
@@ -383,7 +376,7 @@ const MobileTreeNode: React.FC<{
     node: OrgTreeNode; depth: number;
     expandedIds: Set<string>; onToggle: (id: string) => void;
     empByOrgId: Map<string, Employee[]>; memberCounts: Map<string, number>;
-    presenceMap: { [email: string]: string };
+    presenceMap: Record<string, UserPresence>;
     checkedIds: Set<string>; onCheck: (id: string) => void;
     onSelectUser: (emp: Employee) => void;
     searchFilter: (emp: Employee) => boolean;
@@ -431,7 +424,7 @@ const MobileTreeNode: React.FC<{
                 <span style={{ fontSize: "12px", color: theme.colors.textSecondary }}>({count})</span>
                 {/* 펼침 화살표 */}
                 {(hasChildren || directEmps.length > 0) && (
-                    <span style={{ fontSize: "12px", color: theme.colors.textDisabled, transition: "transform 0.2s", transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
+                    <span style={{ fontSize: "16px", color: theme.colors.textDisabled, transition: "transform 0.2s", transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)", lineHeight: 1 }}>›</span>
                 )}
             </div>
 
