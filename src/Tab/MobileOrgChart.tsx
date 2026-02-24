@@ -335,7 +335,7 @@ export default function MobileOrgChart() {
                                 </div>
                             </div>
                             <div style={{ fontSize: "12px", color: theme.colors.textDisabled, marginBottom: "4px" }}>
-                                {selectedUser.orgFullName?.replace(/ /g, " > ") || "-"}
+                                {selectedUser.orgFullName.replace(/ /g, " > ")}
                             </div>
                             <div style={{ fontSize: "13px", color: theme.colors.textSecondary, marginBottom: "16px" }}>
                                 <strong>담당업무</strong> : {selectedUser.description || "-"}
