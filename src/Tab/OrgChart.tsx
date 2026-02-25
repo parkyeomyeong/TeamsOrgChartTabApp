@@ -109,13 +109,24 @@ export default function OrgChart() {
     return new Map(orgList.map(org => [org.orgId, org]));
   }, [orgList]); // orgList 변경 시 재계산
 
+  // empList에 orgFullName, companyName을 미리 채워둔 enriched 버전
+  // 이후 모든 필터/검색에서 이걸 쓰면 매번 .map()으로 넣을 필요 없음
+  const enrichedEmpList = useMemo(() => {
+    if (!empList.length || !orgMap.size) return empList;
+    return empList.map(emp => ({
+      ...emp,
+      orgFullName: orgMap.get(emp.orgId)?.orgFullName || emp.orgFullName || "-",
+      companyName: emp.companyName || emp.companyCode,
+    }));
+  }, [empList, orgMap]);
+
   // 부서별 인원수 계산 (Bottom-up Recursive Aggregation)
   const memberCountMapForOrgTree = useMemo(() => {
-    if (!orgList.length || !empList.length) return new Map<string, number>();
+    if (!orgList.length || !enrichedEmpList.length) return new Map<string, number>();
 
     // 1. 직속 직원 수 계산 (Direct Counts)
     const directCounts = new Map<string, number>();
-    empList.forEach((emp: Employee) => {
+    enrichedEmpList.forEach((emp: Employee) => {
       const current = directCounts.get(emp.orgId) || 0;
       directCounts.set(emp.orgId, current + 1);
     });
@@ -125,7 +136,7 @@ export default function OrgChart() {
       return calculateTotalCounts(treeData, directCounts);
     }
     return new Map<string, number>();
-  }, [treeData, empList, orgList]); // 데이터 변경 시 재계산
+  }, [treeData, enrichedEmpList, orgList]); // 데이터 변경 시 재계산
 
   // --- 헬퍼 함수 (Helper Functions) ---
 
@@ -134,14 +145,8 @@ export default function OrgChart() {
     // 선택된 부서 및 하위 부서의 모든 ID 수집
     const targetIds = getAllDescendantIds(orgId, orgList);
 
-    // 해당 ID 목록에 포함된 부서의 직원만 필터링
-    const filtered = empList
-      .filter((emp) => targetIds.has(emp.orgId))
-      .map((emp) => ({
-        ...emp, // 이미 API에서 Employee 형태로 받아왔다고 가정
-        orgFullName: orgMap.get(emp.orgId)?.orgFullName || "-",
-        companyName: emp.companyName || emp.companyCode,
-      }));
+    // enrichedEmpList 사용 → orgFullName, companyName 이미 채워져 있음
+    const filtered = enrichedEmpList.filter((emp) => targetIds.has(emp.orgId));
     setUsers(filtered);
   };
 
@@ -190,8 +195,7 @@ export default function OrgChart() {
             if (sTerm) {
               // 중복된 검색 로직 (나중에 추출해야 하지만 클로저 접근을 위해 인라인으로 유지)
               const lowerTerm = sTerm.toLowerCase();
-              const filtered = empList.filter((emp: Employee) => {
-                // 1. 회사 코드 필터링
+              const filtered = enrichedEmpList.filter((emp: Employee) => {
                 if (companyCode !== 'ALL' && emp.companyCode !== companyCode) {
                   return false;
                 }
@@ -204,6 +208,7 @@ export default function OrgChart() {
                   case 'position': value = emp.position; break;
                   case 'jobTitle': value = emp.role; break;
                   case 'email': value = emp.email; break;
+                  case 'dept': value = emp.department; break;
                   default: return false;
                 }
                 return value && String(value).toLowerCase().includes(lowerTerm);
@@ -237,7 +242,7 @@ export default function OrgChart() {
 
         // 1. 로그인한 사용자 찾기
         if (currentUserEmail) {
-          const me = empList.find(e => e.email.toLowerCase() === currentUserEmail.toLowerCase());
+          const me = enrichedEmpList.find(e => e.email.toLowerCase() === currentUserEmail.toLowerCase());
           if (me && orgMap.has(me.orgId)) {
             defaultOrgId = me.orgId;
             // 회사 코드도 내 회사로 변경
@@ -418,25 +423,45 @@ export default function OrgChart() {
 
     setIsProcessing(true);
 
-    // 검색 로직
-    const filtered = empList.filter((emp: Employee) => {
-      // 1. 회사 코드 필터링
-      if (companyCode !== 'ALL' && emp.companyCode !== companyCode) {
-        return false;
-      }
+    let filtered: Employee[] = [];
 
-      let value = "";
-      switch (category) {
-        case 'user': value = emp.name; break;
-        case 'extension': value = emp.extension; break;
-        case 'mobile': value = emp.mobile; break;
-        case 'position': value = emp.position; break;
-        case 'jobTitle': value = emp.role; break;
-        case 'email': value = emp.email; break;
-        default: return false;
-      }
-      return value && String(value).toLowerCase().includes(lowerTerm);
-    });
+    if (category === 'dept') {
+      // 부서명 검색: 부서명이 매칭되는 조직의 모든 직원을 표시
+      const matchedOrgIds = new Set<string>();
+      orgList.forEach(org => {
+        if (companyCode !== 'ALL' && org.companyCode !== companyCode) return;
+        if (org.orgName.toLowerCase().includes(lowerTerm)) {
+          matchedOrgIds.add(org.orgId);
+          // // 매칭된 조직 + 하위 조직의 ID 모두 수집
+          // const descendants = getAllDescendantIds(org.orgId, orgList);
+          // descendants.forEach(id => matchedOrgIds.add(id));
+        }
+      });
+
+      filtered = enrichedEmpList.filter(emp => {
+        if (companyCode !== 'ALL' && emp.companyCode !== companyCode) return false;
+        return matchedOrgIds.has(emp.orgId);
+      });
+    } else {
+      // 기존 검색 로직 (사용자명, 내선번호, 핸드폰 등)
+      filtered = enrichedEmpList.filter((emp: Employee) => {
+        if (companyCode !== 'ALL' && emp.companyCode !== companyCode) {
+          return false;
+        }
+
+        let value = "";
+        switch (category) {
+          case 'user': value = emp.name; break;
+          case 'extension': value = emp.extension; break;
+          case 'mobile': value = emp.mobile; break;
+          case 'position': value = emp.position; break;
+          case 'jobTitle': value = emp.role; break;
+          case 'email': value = emp.email; break;
+          default: return false;
+        }
+        return value && String(value).toLowerCase().includes(lowerTerm);
+      });
+    }
 
     setUsers(filtered);
     setCurrentOrg(null);
@@ -609,6 +634,10 @@ export default function OrgChart() {
             flexShrink: 0,
           }}
         >
+          {/* <h2 style={{ fontSize: "18px", fontWeight: "600", marginBottom: "16px", color: theme.colors.textMain, whiteSpace: "nowrap", display: "flex", alignItems: "baseline", gap: "8px" }}>
+            조직도
+          </h2> */}
+
           <div style={{ flex: 1, overflow: "auto" }}>
             {/* OrgTreeView 컴포넌트를 사용하여 조직 계층 구조 표시 */}
             {/* OrgTreeView 컴포넌트를 사용하여 조직 계층 구조 표시 */}

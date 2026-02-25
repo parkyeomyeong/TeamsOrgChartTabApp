@@ -222,11 +222,9 @@ export const OrgTreeView: React.FC<OrgTreeViewProps> = ({
         const term = searchTerm.trim();
         onActiveSearchTermChange(term); // 부모의 활성 검색어 업데이트
 
-        // 부서 검색이 아니면 이벤트 전달 (메인 그리드 검색)
-        if (searchCategory !== 'dept') {
-            if (onSearch) {
-                onSearch(searchCategory, term);
-            }
+        // 검색 이벤트 부모에 전달 (부서명 검색 포함)
+        if (onSearch) {
+            onSearch(searchCategory, term);
         }
     };
 
