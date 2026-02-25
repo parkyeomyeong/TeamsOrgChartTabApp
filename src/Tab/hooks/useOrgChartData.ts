@@ -43,37 +43,25 @@ export const useOrgChartData = (token: string) => {
 
                 const result = await response.json();
 
-                // API 응답 매핑 (레거시 DB 컬럼 -> 프론트엔드 타입)
-                const mappedEmpList: Employee[] = result.empList.map((item: any) => ({
-                    ...item,
-                    position: item.position || '-',
-                    role: item.role || '-',
-                    department: item.department || '-',
-                    orgFullName: item.orgFullName || '-',
-                    extension: item.extension || '-',
-                    mobile: item.mobile || '-',
-                    email: item.email || '',
-                    companyName: item.companyName || item.companyCode,
-                    description: item.description || '-',
-                }));
-                // const mappedEmpList: Employee[] = result.empList.map((item: any) => ({
-                //     id: item.empId || item.id,
-                //     name: item.empNm || item.name,
-                //     position: item.jobTitleDesc || "-",
-                //     role: item.posisionDesc || "-",
-                //     department: item.orgNm || "-",
-                //     orgFullName: item.orgFullName || "-",
-                //     orgId: item.orgId,
-                //     extension: item.offcTelNo || "-",
-                //     mobile: item.moblTelNo || "-",
-                //     email: item.emailAddr || "",
-                //     companyName: item.compCd === "AD" ? "아성다이소"
-                //         : item.compCd === "AS" ? "아성"
-                //             : item.compCd === "AH" ? "아성HMP"
-                //                 : item.compCd,
-                //     companyCode: item.compCd, // 회사 코드 매핑
-                //     description: item.dutyDesc || "-", // 담당업무
-                // }));
+                // orgList → orgMap (O(1) 조회용)
+                const orgMap = new Map<string, OrgData>(result.orgList.map((org: OrgData) => [org.orgId, org]));
+
+                // API 응답 매핑 + 조직정보 Enrich (orgFullName, companyName)
+                const mappedEmpList: Employee[] = result.empList.map((item: any) => {
+                    const org = orgMap.get(item.orgId);
+                    return {
+                        ...item,
+                        position: item.position || '-',
+                        role: item.role || '-',
+                        department: item.department || '-',
+                        orgFullName: org?.orgFullName || item.orgFullName || '-',
+                        extension: item.extension || '-',
+                        mobile: item.mobile || '-',
+                        email: item.email || '',
+                        companyName: item.companyName || item.companyCode,
+                        description: item.description || '-',
+                    };
+                });
 
                 const finalData = {
                     orgList: result.orgList,

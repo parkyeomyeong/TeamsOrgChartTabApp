@@ -109,24 +109,13 @@ export default function OrgChart() {
     return new Map(orgList.map(org => [org.orgId, org]));
   }, [orgList]); // orgList 변경 시 재계산
 
-  // empList에 orgFullName, companyName을 미리 채워둔 enriched 버전
-  // 이후 모든 필터/검색에서 이걸 쓰면 매번 .map()으로 넣을 필요 없음
-  const enrichedEmpList = useMemo(() => {
-    if (!empList.length || !orgMap.size) return empList;
-    return empList.map(emp => ({
-      ...emp,
-      orgFullName: orgMap.get(emp.orgId)?.orgFullName || emp.orgFullName || "-",
-      companyName: emp.companyName || emp.companyCode,
-    }));
-  }, [empList, orgMap]);
-
   // 부서별 인원수 계산 (Bottom-up Recursive Aggregation)
   const memberCountMapForOrgTree = useMemo(() => {
-    if (!orgList.length || !enrichedEmpList.length) return new Map<string, number>();
+    if (!orgList.length || !empList.length) return new Map<string, number>();
 
     // 1. 직속 직원 수 계산 (Direct Counts)
     const directCounts = new Map<string, number>();
-    enrichedEmpList.forEach((emp: Employee) => {
+    empList.forEach((emp: Employee) => {
       const current = directCounts.get(emp.orgId) || 0;
       directCounts.set(emp.orgId, current + 1);
     });
@@ -136,7 +125,7 @@ export default function OrgChart() {
       return calculateTotalCounts(treeData, directCounts);
     }
     return new Map<string, number>();
-  }, [treeData, enrichedEmpList, orgList]); // 데이터 변경 시 재계산
+  }, [treeData, empList, orgList]); // 데이터 변경 시 재계산
 
   // --- 헬퍼 함수 (Helper Functions) ---
 
@@ -145,8 +134,8 @@ export default function OrgChart() {
     // 선택된 부서 및 하위 부서의 모든 ID 수집
     const targetIds = getAllDescendantIds(orgId, orgList);
 
-    // enrichedEmpList 사용 → orgFullName, companyName 이미 채워져 있음
-    const filtered = enrichedEmpList.filter((emp) => targetIds.has(emp.orgId));
+    // empList 사용 → orgFullName, companyName 이미 채워져 있음
+    const filtered = empList.filter((emp) => targetIds.has(emp.orgId));
     setUsers(filtered);
   };
 
@@ -195,7 +184,7 @@ export default function OrgChart() {
             if (sTerm) {
               // 중복된 검색 로직 (나중에 추출해야 하지만 클로저 접근을 위해 인라인으로 유지)
               const lowerTerm = sTerm.toLowerCase();
-              const filtered = enrichedEmpList.filter((emp: Employee) => {
+              const filtered = empList.filter((emp: Employee) => {
                 if (companyCode !== 'ALL' && emp.companyCode !== companyCode) {
                   return false;
                 }
@@ -242,7 +231,7 @@ export default function OrgChart() {
 
         // 1. 로그인한 사용자 찾기
         if (currentUserEmail) {
-          const me = enrichedEmpList.find(e => e.email.toLowerCase() === currentUserEmail.toLowerCase());
+          const me = empList.find(e => e.email.toLowerCase() === currentUserEmail.toLowerCase());
           if (me && orgMap.has(me.orgId)) {
             defaultOrgId = me.orgId;
             // 회사 코드도 내 회사로 변경
@@ -438,13 +427,13 @@ export default function OrgChart() {
         }
       });
 
-      filtered = enrichedEmpList.filter(emp => {
+      filtered = empList.filter(emp => {
         if (companyCode !== 'ALL' && emp.companyCode !== companyCode) return false;
         return matchedOrgIds.has(emp.orgId);
       });
     } else {
       // 기존 검색 로직 (사용자명, 내선번호, 핸드폰 등)
-      filtered = enrichedEmpList.filter((emp: Employee) => {
+      filtered = empList.filter((emp: Employee) => {
         if (companyCode !== 'ALL' && emp.companyCode !== companyCode) {
           return false;
         }
