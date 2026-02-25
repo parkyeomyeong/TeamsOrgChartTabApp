@@ -1,124 +1,15 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { buildOrgTree, filterTree, getAllIds } from "../utils/orgTreeUtils";
-import { OrgData, OrgTreeNode } from "../types"; // Import from centralized types
-// import folderIcon from "../../assets/folder_icon.png"; // [삭제] 이미지 아이콘 제거
+import { OrgData, OrgTreeNode } from "../types";
 import { Folder24Regular, FolderOpen24Regular, PeopleTeam24Regular, Building24Regular } from "@fluentui/react-icons";
 import { theme } from "../constants/theme";
+import {
+    treeContainerStyle, topControlAreaStyle, companySelectStyle,
+    searchRowStyle, searchSelectStyle, searchInputWrapperStyle,
+    searchInputStyle, searchButtonStyle, treeContentStyle,
+    itemContainerStyle, itemContentStyle, folderIconContainerStyle,
+} from "./OrgTree.styles";
 
-// --- 스타일 상수 (CSS-in-JS 방식) ---
-const treeContainerStyle: React.CSSProperties = {
-    width: "100%",
-    height: "100%",
-    display: "flex",
-    flexDirection: "column",
-    backgroundColor: "#f9f9f9",
-    fontFamily: "'Segoe UI', 'Malgun Gothic', sans-serif",
-    boxSizing: "border-box",
-    // borderRight 제거됨
-};
-
-const topControlAreaStyle: React.CSSProperties = {
-    // padding: "10px",
-    backgroundColor: "#fff",
-    borderBottom: "1px solid #e1e1e1",
-    display: "flex",
-    flexDirection: "column",
-    gap: "8px",
-};
-
-const companySelectStyle: React.CSSProperties = {
-    width: "100%",
-    padding: "6px",
-    border: "1px solid #ddd",
-    borderRadius: "4px",
-    fontSize: "13px",
-    outline: "none",
-    color: theme.colors.textMain,
-    backgroundColor: theme.colors.bgWhite,
-};
-
-const searchRowStyle: React.CSSProperties = {
-    display: "flex",
-    gap: "5px",
-};
-
-const searchSelectStyle: React.CSSProperties = {
-    padding: "5px",
-    border: "1px solid #ddd",
-    borderRadius: "4px",
-    fontSize: "12px",
-    outline: "none",
-    cursor: "pointer",
-    color: "#333",
-    backgroundColor: "#fff",
-    width: "80px",
-};
-
-const searchInputWrapperStyle: React.CSSProperties = {
-    position: "relative",
-    flex: 1,
-    display: "flex",
-    alignItems: "center",
-};
-
-const searchInputStyle: React.CSSProperties = {
-    width: "100%",
-    padding: "6px 30px 6px 8px",
-    border: "1px solid #ddd",
-    borderRadius: "4px",
-    fontSize: "13px",
-    outline: "none",
-    boxSizing: "border-box",
-};
-
-const searchButtonStyle: React.CSSProperties = {
-    position: "absolute",
-    right: "5px",
-    background: "none",
-    border: "none",
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    color: theme.colors.textSecondary,
-    width: "24px",
-    height: "24px",
-};
-
-const treeContentStyle: React.CSSProperties = {
-    flex: 1,
-    overflowY: "auto",
-    padding: "5px 0",
-};
-
-const itemContainerStyle: React.CSSProperties = {
-    display: "flex",
-    alignItems: "center",
-    cursor: "pointer",
-    padding: "4px 8px",
-    position: "relative",
-    userSelect: "none",
-    minWidth: "fit-content", // 내용에 맞게 늘어나도록 함
-};
-
-const itemContentStyle: React.CSSProperties = {
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    whiteSpace: "nowrap", // 줄바꿈 방지
-};
-
-const folderIconContainerStyle: React.CSSProperties = {
-    position: "relative",
-    width: "24px",
-    height: "24px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0, // 아이콘 찌그러짐 방지
-};
-
-// [삭제] folderImgStyle, overlayIndicatorStyle 제거됨
 
 // 검색 카테고리
 const SEARCH_CATEGORIES = [
