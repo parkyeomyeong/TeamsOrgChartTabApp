@@ -341,9 +341,9 @@ export default function MobileOrgChart() {
                                 animation: "slideUp 0.3s ease-out",
                             }}
                         >
-                            {/* 스와이프 핸들 영역 (여기서만 터치 이벤트 처리) */}
+                            {/* 스와이프 핸들 영역 (touch-action:none으로 브라우저 pull-to-refresh 차단) */}
                             <div
-                                style={{ padding: "12px 20px 8px", cursor: "grab", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", flexShrink: 0 }}
+                                style={{ padding: "16px 20px 8px", cursor: "grab", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, touchAction: "none" }}
                                 onTouchStart={e => {
                                     const sheet = e.currentTarget.parentElement!;
                                     (sheet as any)._touchStartY = e.touches[0].clientY;
@@ -372,9 +372,12 @@ export default function MobileOrgChart() {
                                 }}
                             >
                                 <div style={{ width: "40px", height: "4px", backgroundColor: theme.colors.border, borderRadius: "2px" }} />
+                            </div>
+                            {/* X 닫기 버튼 */}
+                            <div style={{ display: "flex", justifyContent: "flex-end", padding: "0 16px 8px", flexShrink: 0 }}>
                                 <button
                                     onClick={() => setSelectedUser(null)}
-                                    style={{ position: "absolute", right: "12px", background: "none", border: "none", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center", color: theme.colors.textSecondary }}
+                                    style={{ background: "none", border: "none", cursor: "pointer", padding: "6px", display: "flex", alignItems: "center", color: theme.colors.textSecondary, borderRadius: "50%", transition: "background 0.15s" }}
                                 >
                                     <Dismiss24Regular />
                                 </button>
