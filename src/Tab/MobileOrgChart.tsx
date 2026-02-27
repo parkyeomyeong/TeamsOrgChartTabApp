@@ -8,7 +8,8 @@ import { PresenceBadge } from "./components/PresenceBadge";
 import { Toast } from "./components/Toast";
 import { Spinner } from "./components/Spinner";
 import { Employee, OrgData, OrgTreeNode, UserPresence } from "./types";
-import { buildOrgTree, calculateTotalCounts, getAllAncestorIds } from "./utils/orgTreeUtils";
+import { buildOrgTree, calculateTotalCounts, getAllAncestorIds, getAllDescendantIds } from "./utils/orgTreeUtils";
+import { Dismiss24Regular } from "@fluentui/react-icons";
 import { theme } from "./constants/theme";
 import copyIcon from "../assets/copy.png";
 import { Folder24Regular, FolderOpen24Regular, PeopleTeam24Regular, Building24Regular } from "@fluentui/react-icons";
@@ -194,6 +195,23 @@ export default function MobileOrgChart() {
         setCheckedIds(next);
     };
 
+    // 조직 단위 일괄 선택/해제 (하위 조직 포함 모든 직원)
+    const handleOrgCheck = useCallback((orgId: string) => {
+        const descendantOrgIds = getAllDescendantIds(orgId, orgList);
+        const targetEmpIds: string[] = [];
+        descendantOrgIds.forEach(id => {
+            (empByOrgId.get(id) || []).forEach(emp => targetEmpIds.push(emp.id));
+        });
+        if (targetEmpIds.length === 0) return;
+
+        setCheckedIds(prev => {
+            const next = new Set(prev);
+            const allChecked = targetEmpIds.every(id => prev.has(id));
+            targetEmpIds.forEach(id => allChecked ? next.delete(id) : next.add(id));
+            return next;
+        });
+    }, [orgList, empByOrgId]);
+
     const handleCopy = (text: string) => {
         if (!text || text === "-") return;
         navigator.clipboard.writeText(text).then(() => {
@@ -243,7 +261,7 @@ export default function MobileOrgChart() {
                             value={searchInput}
                             onChange={e => setSearchInput(e.target.value)}
                             onKeyDown={e => { if (e.key === "Enter") executeSearch(); }}
-                            style={{ width: "100%", padding: "10px 40px 10px 12px", border: `1px solid ${theme.colors.border}`, borderRadius: theme.radius.medium, fontSize: "14px", outline: "none" }}
+                            style={{ width: "100%", padding: "10px 40px 10px 12px", border: `1px solid ${theme.colors.border}`, borderRadius: theme.radius.medium, fontSize: "16px", outline: "none" }}
                         />
                         <button
                             onClick={executeSearch}
@@ -255,7 +273,7 @@ export default function MobileOrgChart() {
                     <select
                         value={companyCode}
                         onChange={e => handleCompanyChange(e.target.value)}
-                        style={{ padding: "10px 8px", border: `1px solid ${theme.colors.border}`, borderRadius: theme.radius.medium, fontSize: "13px", backgroundColor: theme.colors.bgWhite }}
+                        style={{ padding: "10px 6px", border: `1px solid ${theme.colors.border}`, borderRadius: theme.radius.medium, fontSize: "13px", backgroundColor: theme.colors.bgWhite, maxWidth: "100px" }}
                     >
                         <option value="ALL">전체</option>
                         {companyOptions.map(([code, name]) => (
@@ -278,6 +296,7 @@ export default function MobileOrgChart() {
                             presenceMap={presenceMap}
                             checkedIds={checkedIds}
                             onCheck={handleCheck}
+                            onOrgCheck={handleOrgCheck}
                             onSelectUser={setSelectedUser}
                             searchFilter={searchFilter}
                             matchedOrgIds={matchedOrgIds}
@@ -313,43 +332,87 @@ export default function MobileOrgChart() {
                 {selectedUser && (
                     <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
                         <div onClick={() => setSelectedUser(null)} style={{ position: "absolute", inset: 0, backgroundColor: "rgba(0,0,0,0.4)" }} />
-                        <div style={{
-                            position: "relative", backgroundColor: theme.colors.bgWhite,
-                            borderTopLeftRadius: "16px", borderTopRightRadius: "16px",
-                            padding: "24px 20px", maxHeight: "75vh", overflowY: "auto",
-                            animation: "slideUp 0.3s ease-out",
-                        }}>
-                            <div style={{ width: "40px", height: "4px", backgroundColor: theme.colors.border, borderRadius: "2px", margin: "0 auto 16px" }} />
-                            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
-                                <PresenceBadge status={presenceMap[selectedUser.email]} showText={false} />
-                                <div>
-                                    <div style={{ fontSize: "18px", fontWeight: "bold", color: theme.colors.textMain }}>
-                                        {selectedUser.name}
-                                        <span style={{ fontSize: "14px", fontWeight: "normal", color: theme.colors.textSecondary, marginLeft: "8px" }}>
-                                            {selectedUser.position}{selectedUser.role && selectedUser.role !== "-" ? ` (${selectedUser.role})` : ""}
-                                        </span>
-                                    </div>
-                                    <div style={{ fontSize: "13px", color: theme.colors.textSecondary, marginTop: "2px" }}>
-                                        {selectedUser.companyName} | {selectedUser.department}
+                        <div
+                            className="bottom-sheet-panel"
+                            style={{
+                                position: "relative", backgroundColor: theme.colors.bgWhite,
+                                borderTopLeftRadius: "16px", borderTopRightRadius: "16px",
+                                maxHeight: "75vh", display: "flex", flexDirection: "column",
+                                animation: "slideUp 0.3s ease-out",
+                            }}
+                        >
+                            {/* 스와이프 핸들 영역 (여기서만 터치 이벤트 처리) */}
+                            <div
+                                style={{ padding: "12px 20px 8px", cursor: "grab", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", flexShrink: 0 }}
+                                onTouchStart={e => {
+                                    const sheet = e.currentTarget.parentElement!;
+                                    (sheet as any)._touchStartY = e.touches[0].clientY;
+                                    (sheet as any)._touchDeltaY = 0;
+                                }}
+                                onTouchMove={e => {
+                                    const sheet = e.currentTarget.parentElement!;
+                                    const delta = e.touches[0].clientY - ((sheet as any)._touchStartY || 0);
+                                    (sheet as any)._touchDeltaY = delta;
+                                    if (delta > 0) {
+                                        sheet.style.transform = `translateY(${delta}px)`;
+                                        sheet.style.transition = 'none';
+                                    }
+                                }}
+                                onTouchEnd={e => {
+                                    const sheet = e.currentTarget.parentElement!;
+                                    const delta = (sheet as any)._touchDeltaY || 0;
+                                    if (delta > 100) {
+                                        sheet.style.transition = 'transform 0.2s ease-out';
+                                        sheet.style.transform = 'translateY(100%)';
+                                        setTimeout(() => setSelectedUser(null), 200);
+                                    } else {
+                                        sheet.style.transition = 'transform 0.2s ease-out';
+                                        sheet.style.transform = 'translateY(0)';
+                                    }
+                                }}
+                            >
+                                <div style={{ width: "40px", height: "4px", backgroundColor: theme.colors.border, borderRadius: "2px" }} />
+                                <button
+                                    onClick={() => setSelectedUser(null)}
+                                    style={{ position: "absolute", right: "12px", background: "none", border: "none", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center", color: theme.colors.textSecondary }}
+                                >
+                                    <Dismiss24Regular />
+                                </button>
+                            </div>
+
+                            {/* 스크롤 가능한 콘텐츠 영역 */}
+                            <div style={{ padding: "0 20px 24px", overflowY: "auto", flex: 1 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
+                                    <PresenceBadge status={presenceMap[selectedUser.email]} showText={false} />
+                                    <div>
+                                        <div style={{ fontSize: "18px", fontWeight: "bold", color: theme.colors.textMain }}>
+                                            {selectedUser.name}
+                                            <span style={{ fontSize: "14px", fontWeight: "normal", color: theme.colors.textSecondary, marginLeft: "8px" }}>
+                                                {selectedUser.position}{selectedUser.role && selectedUser.role !== "-" ? ` (${selectedUser.role})` : ""}
+                                            </span>
+                                        </div>
+                                        <div style={{ fontSize: "13px", color: theme.colors.textSecondary, marginTop: "2px" }}>
+                                            {selectedUser.companyName} | {selectedUser.department}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                            <div style={{ fontSize: "12px", color: theme.colors.textDisabled, marginBottom: "4px" }}>
-                                {selectedUser.orgFullName.replace(/ /g, " > ")}
-                            </div>
-                            <div style={{ fontSize: "13px", color: theme.colors.textSecondary, marginBottom: "16px" }}>
-                                <strong>담당업무</strong> : {selectedUser.description || "-"}
-                            </div>
-                            <div style={{ display: "flex", gap: "12px", marginBottom: "20px", justifyContent: "center" }}>
-                                <ActionBtnLabeled icon={<Call24Regular />} label="전화" onClick={() => openDeepLink('call', [selectedUser.email])} />
-                                <ActionBtnLabeled icon={<Mail24Regular />} label="메일" onClick={() => openDeepLink('mail', [selectedUser.email])} />
-                                <ActionBtnLabeled icon={<Chat24Regular />} label="채팅" onClick={() => openDeepLink('chat', [selectedUser.email])} />
-                                <ActionBtnLabeled icon={<Calendar24Regular />} label="모임" onClick={() => openDeepLink('meeting', [selectedUser.email])} />
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: "10px", fontSize: "13px" }}>
-                                <MobileInfoRow label="핸드폰" value={selectedUser.mobile} onCopy={handleCopy} />
-                                <MobileInfoRow label="이메일" value={selectedUser.email} onCopy={handleCopy} />
-                                <MobileInfoRow label="내선번호" value={selectedUser.extension} onCopy={handleCopy} />
+                                <div style={{ fontSize: "12px", color: theme.colors.textDisabled, marginBottom: "4px" }}>
+                                    {selectedUser.orgFullName.replace(/ /g, " > ")}
+                                </div>
+                                <div style={{ fontSize: "13px", color: theme.colors.textSecondary, marginBottom: "16px" }}>
+                                    <strong>담당업무</strong> : {selectedUser.description || "-"}
+                                </div>
+                                <div style={{ display: "flex", gap: "12px", marginBottom: "20px", justifyContent: "center" }}>
+                                    <ActionBtnLabeled icon={<Call24Regular />} label="전화" onClick={() => openDeepLink('call', [selectedUser.email])} />
+                                    <ActionBtnLabeled icon={<Mail24Regular />} label="메일" onClick={() => openDeepLink('mail', [selectedUser.email])} />
+                                    <ActionBtnLabeled icon={<Chat24Regular />} label="채팅" onClick={() => openDeepLink('chat', [selectedUser.email])} />
+                                    <ActionBtnLabeled icon={<Calendar24Regular />} label="모임" onClick={() => openDeepLink('meeting', [selectedUser.email])} />
+                                </div>
+                                <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: "10px", fontSize: "13px" }}>
+                                    <MobileInfoRow label="핸드폰" value={selectedUser.mobile} onCopy={handleCopy} />
+                                    <MobileInfoRow label="이메일" value={selectedUser.email} onCopy={handleCopy} />
+                                    <MobileInfoRow label="내선번호" value={selectedUser.extension} onCopy={handleCopy} />
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -378,10 +441,11 @@ const MobileTreeNode: React.FC<{
     empByOrgId: Map<string, Employee[]>; memberCounts: Map<string, number>;
     presenceMap: Record<string, UserPresence>;
     checkedIds: Set<string>; onCheck: (id: string) => void;
+    onOrgCheck: (orgId: string) => void;
     onSelectUser: (emp: Employee) => void;
     searchFilter: (emp: Employee) => boolean;
     matchedOrgIds: Set<string> | null;
-}> = ({ node, depth, expandedIds, onToggle, empByOrgId, memberCounts, presenceMap, checkedIds, onCheck, onSelectUser, searchFilter, matchedOrgIds }) => {
+}> = ({ node, depth, expandedIds, onToggle, empByOrgId, memberCounts, presenceMap, checkedIds, onCheck, onOrgCheck, onSelectUser, searchFilter, matchedOrgIds }) => {
     const isExpanded = expandedIds.has(node.orgId);
     const hasChildren = node.children && node.children.length > 0;
     const count = memberCounts.get(node.orgId) || 0;
@@ -395,12 +459,15 @@ const MobileTreeNode: React.FC<{
 
     const filteredEmps = matchedOrgIds ? directEmps.filter(searchFilter) : directEmps;
 
+    // 조직 체크박스 상태: 하위 전체 직원이 모두 체크되었는지
+    const allTreeEmpIds = useMemo(() => collectTreeEmpIds(node, empByOrgId), [node, empByOrgId]);
+    const isOrgChecked = allTreeEmpIds.length > 0 && allTreeEmpIds.every(id => checkedIds.has(id));
+
 
     return (
         <div>
             {/* 조직 노드 */}
             <div
-                onClick={() => onToggle(node.orgId)}
                 style={{
                     display: "flex", alignItems: "center", gap: "8px",
                     padding: "10px 12px", paddingLeft: `${depth * 20 + 12}px`,
@@ -409,22 +476,32 @@ const MobileTreeNode: React.FC<{
                     backgroundColor: isExpanded ? "#f5f5f5" : theme.colors.bgWhite,
                 }}
             >
-                <div style={{ flexShrink: 0, width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    {node.orgLevel === 0 ? (
-                        <Building24Regular color={theme.colors.primary} />
-                    ) : hasChildren ? (
-                        isExpanded ? <FolderOpen24Regular color={theme.colors.primary} /> : <Folder24Regular color={theme.colors.primary} />
-                    ) : (
-                        <PeopleTeam24Regular color={theme.colors.primary} />
+                <div onClick={() => onToggle(node.orgId)} style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1 }}>
+                    <div style={{ flexShrink: 0, width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        {node.orgLevel === 0 ? (
+                            <Building24Regular color={theme.colors.primary} />
+                        ) : hasChildren ? (
+                            isExpanded ? <FolderOpen24Regular color={theme.colors.primary} /> : <Folder24Regular color={theme.colors.primary} />
+                        ) : (
+                            <PeopleTeam24Regular color={theme.colors.primary} />
+                        )}
+                    </div>
+                    <span style={{ fontSize: "14px", fontWeight: "600", color: theme.colors.textMain, flex: 1 }}>
+                        {node.orgName}
+                    </span>
+                    <span style={{ fontSize: "12px", color: theme.colors.textSecondary }}>({count})</span>
+                    {(hasChildren || directEmps.length > 0) && (
+                        <span style={{ fontSize: "16px", color: theme.colors.textDisabled, transition: "transform 0.2s", transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)", lineHeight: 1 }}>›</span>
                     )}
                 </div>
-                <span style={{ fontSize: "14px", fontWeight: "600", color: theme.colors.textMain, flex: 1 }}>
-                    {node.orgName}
-                </span>
-                <span style={{ fontSize: "12px", color: theme.colors.textSecondary }}>({count})</span>
-                {/* 펼침 화살표 */}
-                {(hasChildren || directEmps.length > 0) && (
-                    <span style={{ fontSize: "16px", color: theme.colors.textDisabled, transition: "transform 0.2s", transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)", lineHeight: 1 }}>›</span>
+                {count > 0 && (
+                    <input
+                        type="checkbox"
+                        checked={isOrgChecked}
+                        onChange={() => onOrgCheck(node.orgId)}
+                        onClick={e => e.stopPropagation()}
+                        style={{ width: "20px", height: "20px", cursor: "pointer", accentColor: theme.colors.primary, flexShrink: 0 }}
+                    />
                 )}
             </div>
 
@@ -465,6 +542,7 @@ const MobileTreeNode: React.FC<{
                     empByOrgId={empByOrgId} memberCounts={memberCounts}
                     presenceMap={presenceMap}
                     checkedIds={checkedIds} onCheck={onCheck}
+                    onOrgCheck={onOrgCheck}
                     onSelectUser={onSelectUser}
                     searchFilter={searchFilter} matchedOrgIds={matchedOrgIds}
                 />
@@ -477,6 +555,14 @@ const MobileTreeNode: React.FC<{
 function hasMatchInSubtree(node: OrgTreeNode, matchedOrgIds: Set<string>): boolean {
     if (matchedOrgIds.has(node.orgId)) return true;
     return node.children?.some(child => hasMatchInSubtree(child, matchedOrgIds)) || false;
+}
+
+/** 트리 노드의 모든 하위 직원 ID 수집 (체크박스 상태 계산용) */
+function collectTreeEmpIds(node: OrgTreeNode, empByOrgId: Map<string, Employee[]>): string[] {
+    const ids: string[] = [];
+    (empByOrgId.get(node.orgId) || []).forEach(e => ids.push(e.id));
+    node.children?.forEach(child => ids.push(...collectTreeEmpIds(child, empByOrgId)));
+    return ids;
 }
 
 /** 액션 버튼 (아이콘만) */
