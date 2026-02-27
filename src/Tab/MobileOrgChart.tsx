@@ -145,6 +145,16 @@ export default function MobileOrgChart() {
         }
     }, [data, isLoading, currentUserEmail]);
 
+    // Bottom sheet 열릴 때 브라우저 pull-to-refresh 차단
+    useEffect(() => {
+        if (selectedUser) {
+            document.body.style.overscrollBehavior = 'none';
+        } else {
+            document.body.style.overscrollBehavior = '';
+        }
+        return () => { document.body.style.overscrollBehavior = ''; };
+    }, [selectedUser]);
+
     // --- 회사 변경 시 레벨 1까지 자동 펼침 ---
     const handleCompanyChange = (code: string) => {
         setCompanyCode(code);
@@ -356,7 +366,6 @@ export default function MobileOrgChart() {
                                     (sheet as any)._touchDeltaY = delta;
                                     sheet.style.transform = `translateY(${delta}px)`;
                                     sheet.style.transition = 'none';
-                                    e.preventDefault(); // 스와이프 중 pull-to-refresh 차단
                                 } else {
                                     // 위로 스와이프 → 스크롤로 전환
                                     (sheet as any)._dragging = false;
