@@ -340,37 +340,45 @@ export default function MobileOrgChart() {
                                 maxHeight: "75vh", display: "flex", flexDirection: "column",
                                 animation: "slideUp 0.3s ease-out",
                             }}
-                        >
-                            {/* 스와이프 핸들 영역 (touch-action:none으로 브라우저 pull-to-refresh 차단) */}
-                            <div
-                                style={{ padding: "16px 20px 8px", cursor: "grab", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, touchAction: "none" }}
-                                onTouchStart={e => {
-                                    const sheet = e.currentTarget.parentElement!;
-                                    (sheet as any)._touchStartY = e.touches[0].clientY;
-                                    (sheet as any)._touchDeltaY = 0;
-                                }}
-                                onTouchMove={e => {
-                                    const sheet = e.currentTarget.parentElement!;
-                                    const delta = e.touches[0].clientY - ((sheet as any)._touchStartY || 0);
+                            onTouchStart={e => {
+                                const sheet = e.currentTarget;
+                                const scrollArea = sheet.querySelector('[data-scroll-content]') as HTMLElement;
+                                const atTop = !scrollArea || scrollArea.scrollTop <= 0;
+                                (sheet as any)._touchStartY = e.touches[0].clientY;
+                                (sheet as any)._touchDeltaY = 0;
+                                (sheet as any)._dragging = atTop; // 맨 위일 때만 스와이프 시작
+                            }}
+                            onTouchMove={e => {
+                                const sheet = e.currentTarget;
+                                if (!(sheet as any)._dragging) return;
+                                const delta = e.touches[0].clientY - ((sheet as any)._touchStartY || 0);
+                                if (delta > 0) {
                                     (sheet as any)._touchDeltaY = delta;
-                                    if (delta > 0) {
-                                        sheet.style.transform = `translateY(${delta}px)`;
-                                        sheet.style.transition = 'none';
-                                    }
-                                }}
-                                onTouchEnd={e => {
-                                    const sheet = e.currentTarget.parentElement!;
-                                    const delta = (sheet as any)._touchDeltaY || 0;
-                                    if (delta > 100) {
-                                        sheet.style.transition = 'transform 0.2s ease-out';
-                                        sheet.style.transform = 'translateY(100%)';
-                                        setTimeout(() => setSelectedUser(null), 200);
-                                    } else {
-                                        sheet.style.transition = 'transform 0.2s ease-out';
-                                        sheet.style.transform = 'translateY(0)';
-                                    }
-                                }}
-                            >
+                                    sheet.style.transform = `translateY(${delta}px)`;
+                                    sheet.style.transition = 'none';
+                                    e.preventDefault(); // 스와이프 중 pull-to-refresh 차단
+                                } else {
+                                    // 위로 스와이프 → 스크롤로 전환
+                                    (sheet as any)._dragging = false;
+                                }
+                            }}
+                            onTouchEnd={e => {
+                                const sheet = e.currentTarget;
+                                if (!(sheet as any)._dragging) return;
+                                const delta = (sheet as any)._touchDeltaY || 0;
+                                if (delta > 100) {
+                                    sheet.style.transition = 'transform 0.2s ease-out';
+                                    sheet.style.transform = 'translateY(100%)';
+                                    setTimeout(() => setSelectedUser(null), 200);
+                                } else {
+                                    sheet.style.transition = 'transform 0.2s ease-out';
+                                    sheet.style.transform = 'translateY(0)';
+                                }
+                                (sheet as any)._dragging = false;
+                            }}
+                        >
+                            {/* 스와이프 핸들 바 (시각적 표시) */}
+                            <div style={{ padding: "12px 20px 4px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                                 <div style={{ width: "40px", height: "4px", backgroundColor: theme.colors.border, borderRadius: "2px" }} />
                             </div>
                             {/* X 닫기 버튼 */}
@@ -384,7 +392,7 @@ export default function MobileOrgChart() {
                             </div>
 
                             {/* 스크롤 가능한 콘텐츠 영역 */}
-                            <div style={{ padding: "0 20px 24px", overflowY: "auto", flex: 1 }}>
+                            <div data-scroll-content style={{ padding: "0 20px 24px", overflowY: "auto", flex: 1 }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
                                     <PresenceBadge status={presenceMap[selectedUser.email]} showText={false} />
                                     <div>
