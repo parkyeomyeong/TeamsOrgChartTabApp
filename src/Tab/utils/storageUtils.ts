@@ -26,8 +26,7 @@ export const setCache = <T>(key: string, data: T): void => {
  * @returns 유효한 데이터가 있으면 데이터 반환, 없거나 만료되었으면 null 반환
  */
 // 12시간 (밀리초 단위) - UI 상태 기본 보존 기간
-// export const USER_STATE_DURATION = 12 * 60 * 60 * 1000;
-export const USER_STATE_DURATION = 1 * 60 * 1000; // 1분
+export const USER_STATE_DURATION = 12 * 60 * 60 * 1000;
 
 /**
  * 로컬 스토리지에서 데이터를 가져옵니다. (만료 시간 체크)
