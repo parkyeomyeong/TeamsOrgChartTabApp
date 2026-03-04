@@ -915,7 +915,6 @@ export default function OrgChart() {
                     <InfoRow label="핸드폰" value={selectedUser.mobile} onCopy={handleCopy} />
                     <InfoRow label="이메일" value={selectedUser.email} onCopy={handleCopy} />
                     <InfoRow label="전화번호" value={selectedUser.extension} onCopy={handleCopy} />
-                    <InfoRow label="주소" value="서울특별시 강남구 남부순환로 2748 (도곡동)" onCopy={handleCopy} />
                   </div>
                 </div>
               </div>
