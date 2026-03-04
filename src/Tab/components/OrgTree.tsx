@@ -187,12 +187,12 @@ export const OrgTreeView: React.FC<OrgTreeViewProps> = ({
                     onChange={(e) => onCompanyChange(e.target.value)}
                 >
                     <option value="ALL">그룹사 전체</option>
-                    <option value="AD">아성다이소</option>
-                    <option value="AH">아성HMP</option>
-                    <option value="AS">아성</option>
-                    <option value="HW">한웰</option>
-                    <option value="HE">한웰이쇼핑</option>
-                    <option value="HS">한웰국제무역(상해)</option>
+                    {orgList
+                        .filter(o => o.orgLevel === 0 && o.companyCode)
+                        .map(o => (
+                            <option key={o.companyCode} value={o.companyCode}>{o.orgName}</option>
+                        ))
+                    }
                 </select>
 
                 {/* 검색 row */}
