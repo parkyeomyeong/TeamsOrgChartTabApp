@@ -1,7 +1,7 @@
 {
     "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.24/MicrosoftTeams.schema.json",
     "manifestVersion": "1.24",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "id": "${{TEAMS_APP_ID}}",
     "developer": {
         "name": "Daiso_it",
@@ -14,8 +14,8 @@
         "outline": "outline.png"
     },
     "name": {
-        "short": "AsungOrgChart",
-        "full": "OrgChartTabApp for AsungGroup"
+        "short": "아성그룹조직도",
+        "full": "아성그룹조직도"
     },
     "description": {
         "short": "아성 조직도앱",

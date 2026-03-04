@@ -9,7 +9,8 @@ import { Spinner } from "./components/Spinner";
 import { useOrgChartData } from "./hooks/useOrgChartData"; // API Hook
 import { Employee, OrgData, OrgTreeNode } from "./types"; // 공통 타입
 import { getAllDescendantIds, buildOrgTree, calculateTotalCounts, getAllAncestorIds } from "./utils/orgTreeUtils";
-import { getCache, setCache } from "./utils/storageUtils"; // 캐시 유틸리티 import
+import { getCache, setCache } from "./utils/storageUtils";
+import { API_BASE_URL } from "./config";
 import { theme } from "./constants/theme";
 // 이미지 에셋 임포트
 import copyIcon from "../assets/copy.png";
@@ -48,7 +49,7 @@ export default function OrgChart() {
   // --- 커스텀 훅 (Custom Hooks) ---
   // Presence Hook 사용
   const { presenceMap } = useUserPresence(gridUserEmails, token);
-  const userPhotos: { [email: string]: string } = {}; // 나중에 구현 예정
+  const getPhotoUrl = (email: string) => email ? `${API_BASE_URL}/api/users/photo/${encodeURIComponent(email)}` : undefined;
 
   // 2. 팝업(상세 정보)에 표시할 선택된 사용자
   const [selectedUser, setSelectedUser] = useState<Employee | null>(null);
@@ -719,7 +720,7 @@ export default function OrgChart() {
                           />
                         </td>
                         <td style={{ ...tdStyle, display: "flex", alignItems: "center", gap: "12px" }}>
-                          <AvatarWithStatus name={emp.name} photoUrl={userPhotos[emp.email]} status={presenceMap[emp.email]} size={32} />
+                          <AvatarWithStatus name={emp.name} photoUrl={getPhotoUrl(emp.email)} status={presenceMap[emp.email]} size={32} />
                           {emp.name}
                         </td>
                         <td style={tdStyle}>{emp.position}</td>
@@ -824,7 +825,7 @@ export default function OrgChart() {
                         onChange={(e) => { e.stopPropagation(); toggleCheckRightPanel(emp.id); }}
                         style={{ cursor: "pointer" }}
                       />
-                      <AvatarWithStatus name={emp.name} photoUrl={userPhotos[emp.email]} status={presenceMap[emp.email]} size={24} />
+                      <AvatarWithStatus name={emp.name} photoUrl={getPhotoUrl(emp.email)} status={presenceMap[emp.email]} size={24} />
                       <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         <div style={{ fontWeight: "bold", fontSize: "13px", color: theme.colors.textMain }}>{emp.name}</div>
                         <div style={{ fontSize: "11px", color: theme.colors.textSecondary }}>{emp.position}</div>
@@ -859,7 +860,7 @@ export default function OrgChart() {
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minWidth: "130px" }}>
                   <AvatarWithStatus
                     name={selectedUser.name}
-                    photoUrl={userPhotos[selectedUser.email]}
+                    photoUrl={getPhotoUrl(selectedUser.email)}
                     status={presenceMap[selectedUser.email]}
                     size={96} // Fluent UI Standard Size
                     hideBadge={true} // 팝업에서는 아바타 옆 배지 숨김

@@ -4,7 +4,8 @@ import { FluentProvider, webLightTheme } from "@fluentui/react-components";
 import { useTeamsAuth } from "./hooks/useTeamsAuth";
 import { useOrgChartData } from "./hooks/useOrgChartData";
 import { useUserPresence } from "./hooks/useUserPresence";
-import { PresenceBadge } from "./components/PresenceBadge";
+import { AvatarWithStatus } from "./components/StatusAvatar";
+import { API_BASE_URL } from "./config";
 import { Toast } from "./components/Toast";
 import { Spinner } from "./components/Spinner";
 import { Employee, OrgData, OrgTreeNode, UserPresence } from "./types";
@@ -112,7 +113,8 @@ export default function MobileOrgChart() {
         return [...new Set(emails)];
     }, [expandedIds, empByOrgId, selectedUser]);
 
-    const { presenceMap } = useUserPresence(visibleEmails, token, true); // 모바일: 새 이메일만 요청
+    const { presenceMap } = useUserPresence(visibleEmails, token, true);
+    const getPhotoUrl = (email: string) => email ? `${API_BASE_URL}/api/users/photo/${encodeURIComponent(email)}` : undefined;
 
     // --- 루트(회사) 노드 ID 수집 헬퍼 ---
     const getRootIds = useCallback((tree: OrgTreeNode[]) => {
@@ -294,6 +296,7 @@ export default function MobileOrgChart() {
                             empByOrgId={empByOrgId}
                             memberCounts={memberCounts}
                             presenceMap={presenceMap}
+                            getPhotoUrl={getPhotoUrl}
                             checkedIds={checkedIds}
                             onCheck={handleCheck}
                             onOrgCheck={handleOrgCheck}
@@ -382,7 +385,7 @@ export default function MobileOrgChart() {
                             {/* 콘텐츠 영역 */}
                             <div style={{ padding: "0 20px 24px", overflowY: "auto", flex: 1 }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
-                                    <PresenceBadge status={presenceMap[selectedUser.email]} showText={false} />
+                                    <AvatarWithStatus name={selectedUser.name} photoUrl={getPhotoUrl(selectedUser.email)} status={presenceMap[selectedUser.email]} size={48} />
                                     <div>
                                         <div style={{ fontSize: "18px", fontWeight: "bold", color: theme.colors.textMain }}>
                                             {selectedUser.name}
@@ -444,7 +447,8 @@ const MobileTreeNode: React.FC<{
     onSelectUser: (emp: Employee) => void;
     searchFilter: (emp: Employee) => boolean;
     matchedOrgIds: Set<string> | null;
-}> = ({ node, depth, expandedIds, onToggle, empByOrgId, memberCounts, presenceMap, checkedIds, onCheck, onOrgCheck, onSelectUser, searchFilter, matchedOrgIds }) => {
+    getPhotoUrl: (email: string) => string | undefined;
+}> = ({ node, depth, expandedIds, onToggle, empByOrgId, memberCounts, presenceMap, checkedIds, onCheck, onOrgCheck, onSelectUser, searchFilter, matchedOrgIds, getPhotoUrl }) => {
     const isExpanded = expandedIds.has(node.orgId);
     const hasChildren = node.children && node.children.length > 0;
     const count = memberCounts.get(node.orgId) || 0;
@@ -516,7 +520,7 @@ const MobileTreeNode: React.FC<{
                     }}
                 >
                     <div onClick={() => onSelectUser(emp)} style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1, cursor: "pointer" }}>
-                        <PresenceBadge status={presenceMap[emp.email]} showText={false} />
+                        <AvatarWithStatus name={emp.name} photoUrl={getPhotoUrl(emp.email)} status={presenceMap[emp.email]} size={32} />
                         <div>
                             <span style={{ fontSize: "14px", color: theme.colors.textMain, fontWeight: "500" }}>{emp.name}</span>
                             <span style={{ fontSize: "13px", color: theme.colors.textSecondary, marginLeft: "6px" }}>
@@ -544,6 +548,7 @@ const MobileTreeNode: React.FC<{
                     onOrgCheck={onOrgCheck}
                     onSelectUser={onSelectUser}
                     searchFilter={searchFilter} matchedOrgIds={matchedOrgIds}
+                    getPhotoUrl={getPhotoUrl}
                 />
             ))}
         </div>
