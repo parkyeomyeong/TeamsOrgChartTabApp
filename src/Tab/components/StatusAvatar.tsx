@@ -24,7 +24,8 @@ export const AvatarWithStatus: React.FC<AvatarWithStatusProps> = ({ name, photoU
                 image={showPhoto ? {
                     src: photoUrl,
                     // @ts-ignore
-                    onError: () => setImgFailed(true)
+                    onError: () => setImgFailed(true),
+                    onLoad: (e: any) => { if (e.target.naturalWidth <= 1) setImgFailed(true); } // 이미지 캐싱처리를 위해 서버쪽에서 프로필이 없어도 1*1 이미지로 리턴해서 브라우저에서 캐싱처리 되도록
                 } : undefined}
                 size={size as any}
                 color="colorful"
