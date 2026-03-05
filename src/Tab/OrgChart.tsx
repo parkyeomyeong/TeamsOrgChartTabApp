@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useContext, useCallback, useRef, CSSProperties } from "react";
+import React, { useState, useMemo, useEffect, useCallback, useRef, CSSProperties } from "react";
 import { app } from "@microsoft/teams-js";
 import { FluentProvider, webLightTheme } from "@fluentui/react-components";
 // import { TeamsFxContext } from "../Context"; // 현재 사용하지 않음 (필요 시 주석 해제)
@@ -28,10 +28,10 @@ export default function OrgChart() {
   // const { themeString } = useContext(TeamsFxContext);
 
   // SSO 토큰 (1회성 호출)
-  const { token, currentUserEmail, isAuthLoading } = useTeamsAuth(); // 맨 처음 SSO 인증 + 본인 정보 가져오기
+  const { token, updateToken, currentUserEmail, isAuthLoading } = useTeamsAuth(); // 맨 처음 SSO 인증 + 본인 정보 가져오기
 
   // --- API 데이터 조회 ---
-  const { data, isLoading: isApiLoading } = useOrgChartData(token); // 조직정보 + 직원정보 가져오는 출발 훅 
+  const { data, isLoading: isApiLoading } = useOrgChartData(token, updateToken); // 조직정보 + 직원정보 가져오는 출발 훅
   const orgList = data?.orgList || [];
   const empList = data?.empList || [];
 
@@ -48,7 +48,7 @@ export default function OrgChart() {
 
   // --- 커스텀 훅 (Custom Hooks) ---
   // Presence Hook 사용
-  const { presenceMap } = useUserPresence(gridUserEmails, token);
+  const { presenceMap } = useUserPresence(gridUserEmails, token, false, updateToken); // gridUserEmails가 바뀌면 useUserPresence가 호출됨
   const getPhotoUrl = (email: string) => email ? `${API_BASE_URL}/api/users/photo/${encodeURIComponent(email)}` : undefined;
 
   // 2. 팝업(상세 정보)에 표시할 선택된 사용자

@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { API_BASE_URL } from "../config";
 import { UserPresence } from "../types";
+import { authFetch } from "../utils/authFetch";
 
 /**
  * @param emails 접속상태를 조회할 이메일 목록
  * @param token 인증 토큰
  * @param incrementalOnly true면 이미 조회한 이메일은 건너뜀 (모바일용), false/미지정이면 매번 전체 요청 (데스크탑용)
+ * @param onTokenRefreshed 토큰 갱신 시 상위에 알림 (authFetch용)
  */
-export const useUserPresence = (emails: string[], token: string, incrementalOnly = false) => {
+export const useUserPresence = (emails: string[], token: string, incrementalOnly = false, onTokenRefreshed?: (t: string) => void) => {
     const [presenceMap, setPresenceMap] = useState<Record<string, UserPresence>>({});
     const fetchedEmailsRef = useRef<Set<string>>(new Set());
 
@@ -22,14 +24,18 @@ export const useUserPresence = (emails: string[], token: string, incrementalOnly
         if (targetEmails.length === 0) return;
 
         try {
-            const response = await fetch(`${API_BASE_URL}/api/users/presence`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
+            const response = await authFetch(
+                `${API_BASE_URL}/api/users/presence`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({ ids: targetEmails }),
                 },
-                body: JSON.stringify({ ids: targetEmails }),
-            });
+                onTokenRefreshed
+            );
 
             if (!response.ok) {
                 console.warn(`Presence API Error: ${response.status}`);
@@ -61,5 +67,3 @@ export const useUserPresence = (emails: string[], token: string, incrementalOnly
 
     return { presenceMap, refetch: fetchPresence };
 };
-
-

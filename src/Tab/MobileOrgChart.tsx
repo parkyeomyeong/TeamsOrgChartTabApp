@@ -21,8 +21,8 @@ import { Call24Regular, Chat24Regular, Calendar24Regular, Mail24Regular, Search2
 // ============================
 export default function MobileOrgChart() {
     // --- 인증 & 데이터 ---
-    const { token, currentUserEmail, isAuthLoading } = useTeamsAuth();
-    const { data, isLoading: isApiLoading } = useOrgChartData(token);
+    const { token, updateToken, currentUserEmail, isAuthLoading } = useTeamsAuth();
+    const { data, isLoading: isApiLoading } = useOrgChartData(token, updateToken);
     const orgList: OrgData[] = data?.orgList || [];
     const empList: Employee[] = data?.empList || [];
 
@@ -113,7 +113,7 @@ export default function MobileOrgChart() {
         return [...new Set(emails)];
     }, [expandedIds, empByOrgId, selectedUser]);
 
-    const { presenceMap } = useUserPresence(visibleEmails, token, true);
+    const { presenceMap } = useUserPresence(visibleEmails, token, true, updateToken);
     const getPhotoUrl = (email: string) => email ? `${API_BASE_URL}/api/users/photo/${encodeURIComponent(email)}` : undefined;
 
     // --- 루트(회사) 노드 ID 수집 헬퍼 ---

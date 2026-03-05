@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { app, authentication } from "@microsoft/teams-js";
 
 /**
@@ -38,5 +38,8 @@ export const useTeamsAuth = () => {
         // 의존성 배열 [] : 마운트 시 최초 1회만 실행
     }, []);
 
-    return { token, currentUserEmail, isAuthLoading };
+    // authFetch 콜백용: 갱신된 토큰을 상태에 반영
+    const updateToken = useCallback((newToken: string) => setToken(newToken), []);
+
+    return { token, updateToken, currentUserEmail, isAuthLoading };
 };

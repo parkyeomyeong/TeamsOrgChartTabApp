@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { API_BASE_URL } from "../config";
 import { Employee, OrgData } from "../types";
 import { getCache, setCache } from "../utils/storageUtils";
+import { authFetch } from "../utils/authFetch";
 
 interface OrgChartData {
     orgList: OrgData[];
@@ -10,14 +11,13 @@ interface OrgChartData {
 
 const CACHE_KEY = "orgChartDataCache_v1";
 
-export const useOrgChartData = (token: string) => {
+export const useOrgChartData = (token: string, onTokenRefreshed?: (t: string) => void) => {
     const [data, setData] = useState<OrgChartData | null>(null);
     const [isLoading, setIsLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchData = async () => {
-            // API 호출을 위해서는 토큰이 필요합니다.
             if (!token) return;
 
             // 1. 캐시 확인
@@ -31,11 +31,11 @@ export const useOrgChartData = (token: string) => {
 
             try {
                 setIsLoading(true);
-                const response = await fetch(`${API_BASE_URL}/api/orgChartData`, {
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                    },
-                });
+                const response = await authFetch(
+                    `${API_BASE_URL}/api/orgChartData`,
+                    { headers: { Authorization: `Bearer ${token}` } },
+                    onTokenRefreshed
+                );
 
                 if (!response.ok) {
                     throw new Error(`API 오류: ${response.status}`);
@@ -43,10 +43,8 @@ export const useOrgChartData = (token: string) => {
 
                 const result = await response.json();
 
-                // orgList → orgMap (O(1) 조회용)
                 const orgMap = new Map<string, OrgData>(result.orgList.map((org: OrgData) => [org.orgId, org]));
 
-                // API 응답 매핑 + 조직정보 Enrich (orgFullName, companyName)
                 const mappedEmpList: Employee[] = result.empList.map((item: any) => {
                     const org = orgMap.get(item.orgId);
                     return {
@@ -69,8 +67,6 @@ export const useOrgChartData = (token: string) => {
                 };
 
                 setData(finalData);
-
-                // 2. 캐시에 저장
                 setCache(CACHE_KEY, finalData);
 
             } catch (err: any) {
