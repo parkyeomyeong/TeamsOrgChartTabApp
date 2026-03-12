@@ -181,12 +181,13 @@ export default function OrgChart() {
             setGridSearchTerm(sTerm);
             setGridSearchCategory(sCat);
 
-            // Trigger Search immediately
+            // 검색어 있으면
             if (sTerm) {
               // 중복된 검색 로직 (나중에 추출해야 하지만 클로저 접근을 위해 인라인으로 유지)
               const lowerTerm = sTerm.toLowerCase();
               const filtered = empList.filter((emp: Employee) => {
-                if (companyCode !== 'ALL' && emp.companyCode !== companyCode) {
+                const savedCompany = savedState.companyCode || companyCode;
+                if (savedCompany !== 'ALL' && emp.companyCode !== savedCompany) {
                   return false;
                 }
 
