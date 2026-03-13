@@ -406,7 +406,7 @@ export default function MobileOrgChart() {
                                 <div style={{ fontSize: "13px", color: theme.colors.textSecondary, marginBottom: "4px" }}>
                                     <strong>담당업무</strong> : {selectedUser.description || "-"}
                                 </div>
-                                <div style={{ fontSize: "11px", color: theme.colors.textDisabled, marginBottom: "16px", lineHeight: "1.4" }}>
+                                <div style={{ fontSize: "10px", color: theme.colors.textDisabled, marginBottom: "16px", lineHeight: "1.4", wordBreak: "keep-all" }}>
                                     ※ 담당업무는 HR시스템 [개인인사정보] 메뉴에서 직접 등록하실 수 있으며, 미등록 시에는 기본 직무가 표기됩니다.
                                 </div>
                                 <div style={{ display: "flex", gap: "12px", marginBottom: "20px", justifyContent: "center" }}>
