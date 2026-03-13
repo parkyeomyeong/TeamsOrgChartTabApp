@@ -76,7 +76,7 @@ export default function MobileOrgChart() {
         return map;
     }, [empList, companyCode]);
 
-    // 통합 검색 필터 (이름/부서/핸드폰/내선/이메일/직위/직책)
+    // 통합 검색 필터 (이름/부서/핸드폰/내선/이메일/직위/직책/담당업무)
     const searchFilter = useCallback((emp: Employee) => {
         if (!activeSearchTerm) return true;
         const t = activeSearchTerm.toLowerCase();
@@ -87,7 +87,8 @@ export default function MobileOrgChart() {
             emp.extension?.includes(t) ||
             emp.email?.toLowerCase().includes(t) ||
             emp.position?.toLowerCase().includes(t) ||
-            emp.role?.toLowerCase().includes(t)
+            emp.role?.toLowerCase().includes(t) ||
+            emp.description?.toLowerCase().includes(t)
         );
     }, [activeSearchTerm]);
 
@@ -171,7 +172,8 @@ export default function MobileOrgChart() {
                     emp.extension?.includes(t) ||
                     emp.email?.toLowerCase().includes(t) ||
                     emp.position?.toLowerCase().includes(t) ||
-                    emp.role?.toLowerCase().includes(t);
+                    emp.role?.toLowerCase().includes(t) ||
+                    emp.description?.toLowerCase().includes(t);
                 if (matched) {
                     ids.add(emp.orgId);
                     const ancestors = getAllAncestorIds(emp.orgId, orgMap);
@@ -401,8 +403,11 @@ export default function MobileOrgChart() {
                                 <div style={{ fontSize: "12px", color: theme.colors.textDisabled, marginBottom: "4px" }}>
                                     {selectedUser.orgFullName.replace(/ /g, " > ")}
                                 </div>
-                                <div style={{ fontSize: "13px", color: theme.colors.textSecondary, marginBottom: "16px" }}>
+                                <div style={{ fontSize: "13px", color: theme.colors.textSecondary, marginBottom: "4px" }}>
                                     <strong>담당업무</strong> : {selectedUser.description || "-"}
+                                </div>
+                                <div style={{ fontSize: "11px", color: theme.colors.textDisabled, marginBottom: "16px", lineHeight: "1.4" }}>
+                                    ※ 담당업무는 HR시스템 [개인인사정보] 메뉴에서 직접 등록하실 수 있으며, 미등록 시에는 기본 직무가 표기됩니다.
                                 </div>
                                 <div style={{ display: "flex", gap: "12px", marginBottom: "20px", justifyContent: "center" }}>
                                     <ActionBtnLabeled icon={<Call24Regular />} label="전화" onClick={() => openDeepLink('call', [selectedUser.email])} />

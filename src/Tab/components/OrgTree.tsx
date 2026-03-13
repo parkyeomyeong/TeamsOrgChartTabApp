@@ -20,6 +20,7 @@ const SEARCH_CATEGORIES = [
     { value: "position", label: "직위" },
     { value: "jobTitle", label: "직책" },
     { value: "email", label: "이메일" },
+    { value: "description", label: "담당업무" },
 ];
 
 export interface OrgTreeViewProps {
