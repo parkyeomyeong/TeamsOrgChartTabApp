@@ -948,7 +948,7 @@ const overlayStyle: CSSProperties = {
   backgroundColor: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000
 };
 const popupStyle: CSSProperties = {
-  width: "650px", backgroundColor: theme.colors.bgWhite, borderRadius: theme.radius.medium,
+  width: "700px", backgroundColor: theme.colors.bgWhite, borderRadius: theme.radius.medium,
   boxShadow: theme.shadow.popup, position: "relative", overflow: "hidden"
 };
 const closeBtnStyle: CSSProperties = {
