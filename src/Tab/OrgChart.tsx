@@ -140,11 +140,6 @@ export default function OrgChart() {
     setUsers(filtered);
   };
 
-  useEffect(() => {
-    console.log('[USERS 변경]', users.length, '명, orgIds:', [...new Set(users.map(u => u.orgId))]);
-  }, [users]);
-
-
   // --- 이펙트 (Effects) ---
 
   // 1. API 데이터 로드 후 초기화 및 상태 복원 (State Restoration)
@@ -711,9 +706,9 @@ export default function OrgChart() {
                     </tr>
                   </thead>
                   <tbody>
-                    {users.map((emp) => (
+                    {users.map((emp, idx) => (
                       <tr
-                        key={emp.id}
+                        key={emp.id || `fallback-${emp.email}-${emp.orgId}-${idx}`}
                         onClick={() => handleRowClick(emp)}
                         style={{ borderBottom: "1px solid #edebe9", backgroundColor: "white", cursor: "pointer" }}
                         onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#faf9f8"}
