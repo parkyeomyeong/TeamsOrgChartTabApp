@@ -135,21 +135,15 @@ export default function OrgChart() {
     // 선택된 부서 및 하위 부서의 모든 ID 수집
     const targetIds = getAllDescendantIds(orgId, orgList);
 
-    // [DEBUG] 어떤 orgId가 targetIds에 포함됐는지 확인
-    console.log(`[DEBUG] updateEmployeeList 호출됨. clickedOrgId="${orgId}", targetIds=`, Array.from(targetIds));
-
     // empList 사용 → orgFullName, companyName 이미 채워져 있음
     const filtered = empList.filter((emp) => targetIds.has(emp.orgId));
-
-    // [DEBUG] 결과 직원들이 어떤 orgId 소속인지 확인 (99999가 섞여있으면 데이터 문제)
-    const orgIdDist = filtered.reduce((acc, emp) => {
-      acc[emp.orgId] = (acc[emp.orgId] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-    console.log(`[DEBUG] filtered 결과 ${filtered.length}명, orgId 분포:`, orgIdDist);
-
     setUsers(filtered);
   };
+
+  useEffect(() => {
+    console.log('[USERS 변경]', users.length, '명, orgIds:', [...new Set(users.map(u => u.orgId))]);
+  }, [users]);
+
 
   // --- 이펙트 (Effects) ---
 
