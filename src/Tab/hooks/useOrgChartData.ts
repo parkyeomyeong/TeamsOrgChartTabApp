@@ -45,10 +45,16 @@ export const useOrgChartData = (token: string, onTokenRefreshed?: (t: string) =>
 
                 const orgMap = new Map<string, OrgData>(result.orgList.map((org: OrgData) => [org.orgId, org]));
 
-                const mappedEmpList: Employee[] = result.empList.map((item: any) => {
+                const mappedEmpList: Employee[] = result.empList.map((item: any, index: number) => {
                     const org = orgMap.get(item.orgId);
+                    // email은 사람마다 고유하므로 가장 안전한 key 재료.
+                    // 유저 id가 없거나 "0" 같은 공유 값일 수 있어서 id 우선 믿으면 안 됨.
+                    const stableId = item.email
+                        ? `${item.email}-${item.orgId}`
+                        : item.id || `no-id-${item.orgId}-${index}`;
                     return {
                         ...item,
+                        id: stableId,
                         position: item.position || '-',
                         role: item.role || '-',
                         department: item.department || '-',
