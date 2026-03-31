@@ -706,9 +706,9 @@ export default function OrgChart() {
                     </tr>
                   </thead>
                   <tbody>
-                    {users.map((emp, idx) => (
+                    {users.map((emp) => (
                       <tr
-                        key={emp.id || `fallback-${emp.email}-${emp.orgId}-${idx}`}
+                        key={emp.id}
                         onClick={() => handleRowClick(emp)}
                         style={{ borderBottom: "1px solid #edebe9", backgroundColor: "white", cursor: "pointer" }}
                         onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#faf9f8"}
