@@ -13,6 +13,7 @@ import {
 
 // 검색 카테고리
 const SEARCH_CATEGORIES = [
+    { value: "all", label: "통합검색" },
     { value: "user", label: "사용자" },
     { value: "dept", label: "부서명" },
     { value: "extension", label: "내선번호" },

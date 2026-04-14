@@ -69,7 +69,7 @@ export default function OrgChart() {
 
   // 트리 검색 상태
   const [treeSearchTerm, setTreeSearchTerm] = useState(""); //입력창에 실시간으로 타이핑되는거
-  const [treeSearchCategory, setTreeSearchCategory] = useState("user"); //드롭다운에서 선택한 검색 카테고리
+  const [treeSearchCategory, setTreeSearchCategory] = useState("all"); //드롭다운에서 선택한 검색 카테고리
   const [activeTreeSearchTerm, setActiveTreeSearchTerm] = useState(""); // 실제로 검색실행된 검색어(검색버튼 눌릴때만 업데이트!)
 
   // 그리드 검색 상태 (검색 결과 복원용)
@@ -167,7 +167,7 @@ export default function OrgChart() {
           // 트리 검색 상태
           if (savedState.treeSearch) {
             setTreeSearchTerm(savedState.treeSearch.term || "");
-            setTreeSearchCategory(savedState.treeSearch.category || "user");
+            setTreeSearchCategory(savedState.treeSearch.category || "all");
             setActiveTreeSearchTerm(savedState.treeSearch.activeTerm || "");
           }
 
@@ -176,7 +176,7 @@ export default function OrgChart() {
             // 검색 모드 복원
             setViewMode('SEARCH');
             const sTerm = savedState.search?.term || "";
-            const sCat = savedState.search?.category || "user";
+            const sCat = savedState.search?.category || "all";
 
             setGridSearchTerm(sTerm);
             setGridSearchCategory(sCat);
@@ -193,6 +193,11 @@ export default function OrgChart() {
 
                 let value = "";
                 switch (sCat) {
+                  case 'all':
+                    return [
+                      emp.name, emp.department, emp.extension, emp.mobile,
+                      emp.position, emp.role, emp.email, emp.description
+                    ].some(v => v && String(v).toLowerCase().includes(lowerTerm));
                   case 'user': value = emp.name; break;
                   case 'extension': value = emp.extension; break;
                   case 'mobile': value = emp.mobile; break;
@@ -435,7 +440,7 @@ export default function OrgChart() {
         return matchedOrgIds.has(emp.orgId);
       });
     } else {
-      // 기존 검색 로직 (사용자명, 내선번호, 핸드폰 등)
+      // 기존 검색 로직 (사용자명, 내선번호, 핸드폰, 통합검색 등)
       filtered = empList.filter((emp: Employee) => {
         if (companyCode !== 'ALL' && emp.companyCode !== companyCode) {
           return false;
@@ -443,6 +448,11 @@ export default function OrgChart() {
 
         let value = "";
         switch (category) {
+          case 'all':
+            return [
+              emp.name, emp.department, emp.extension, emp.mobile,
+              emp.position, emp.role, emp.email, emp.description
+            ].some(v => v && String(v).toLowerCase().includes(lowerTerm));
           case 'user': value = emp.name; break;
           case 'extension': value = emp.extension; break;
           case 'mobile': value = emp.mobile; break;

@@ -19,6 +19,7 @@ export const topControlAreaStyle: React.CSSProperties = {
     display: "flex",
     flexDirection: "column",
     gap: "8px",
+    paddingBottom: "15px",
 };
 
 export const companySelectStyle: React.CSSProperties = {
