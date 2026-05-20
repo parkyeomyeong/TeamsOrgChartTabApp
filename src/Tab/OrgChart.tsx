@@ -18,7 +18,9 @@ import { useUserPresence } from "./hooks/useUserPresence"; // Presence Hook
 import { PresenceBadge } from "./components/PresenceBadge"; // Badge Component
 import { useTeamsAuth } from "./hooks/useTeamsAuth";
 // Fluent Icons
-import { Call24Regular, Chat24Regular, Calendar24Regular, Mail24Regular } from "@fluentui/react-icons";
+import { Call24Regular, Chat24Regular, Calendar24Regular, Mail24Regular, Star24Filled, Star24Regular } from "@fluentui/react-icons";
+import { useFavorites } from "./hooks/useFavorites";
+
 
 /**
  * OrgChart 컴포넌트 메인
@@ -35,10 +37,34 @@ export default function OrgChart() {
   const orgList = data?.orgList || [];
   const empList = data?.empList || [];
 
+  // 로그인한 사용자의 사번 매핑
+  const myEmpId = useMemo(() => {
+    if (!currentUserEmail || !empList.length) return null;
+    const me = empList.find(e => e.email && e.email.toLowerCase() === currentUserEmail.toLowerCase());
+    return me ? me.id : null;
+  }, [currentUserEmail, empList]);
+
+  // HR 매핑 실패 여부 감지 (로그인 이메일은 있으나 사원 목록에 매핑되지 않는 예외 상황)
+  const isHrUnregistered = useMemo(() => {
+    return !!currentUserEmail && empList.length > 0 && !myEmpId;
+  }, [currentUserEmail, empList, myEmpId]);
+
+  // 8. Toast 상태 (useFavorites가 사용하므로 위로 끌어올림)
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // --- 즐겨찾기 API 연동 (사번 기반) ---
+  const { favorites, addFavorite, removeFavorite, isFavorite } = useFavorites(
+    token,
+    myEmpId,
+    updateToken,
+    setToastMessage
+  );
+
   // --- State 관리 영역 ---
 
-  // 0. View Mode (BROWSE | SEARCH)
-  const [viewMode, setViewMode] = useState<'BROWSE' | 'SEARCH'>('BROWSE');
+  // 0. View Mode (BROWSE | SEARCH | FAVORITES)
+  const [viewMode, setViewMode] = useState<'BROWSE' | 'SEARCH' | 'FAVORITES'>('BROWSE');
+
 
   // 1. 중앙 그리드에 표시될 사용자 목록
   const [users, setUsers] = useState<Employee[]>([]);
@@ -90,8 +116,7 @@ export default function OrgChart() {
   // 7. 검색 모드 상태 (viewMode로 대체될 예정이나 하위 호환을 위해 유지하거나 viewMode derived로 변경)
   const isSearchMode = viewMode === 'SEARCH';
 
-  // 8. Toast 상태
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
 
   // 9. Bottom Panel 자동 스크롤을 위한 Ref
   const bottomPanelRef = useRef<HTMLDivElement>(null);
@@ -214,6 +239,12 @@ export default function OrgChart() {
             }
             restored = true;
 
+          } else if (savedState.viewMode === 'FAVORITES') {
+            // 즐겨찾기 모드 복원
+            setViewMode('FAVORITES');
+            setSelectedOrgId("");
+            setCurrentOrg(null);
+            restored = true;
           } else {
             // 탐색(BROWSE) 모드 복원 (기본값)
             setViewMode('BROWSE');
@@ -228,6 +259,7 @@ export default function OrgChart() {
               restored = true;
             }
           }
+
 
         } catch (e) { console.error("Failed to restore state", e); }
       }
@@ -279,8 +311,18 @@ export default function OrgChart() {
     }
   }, [data, isLoading, currentUserEmail]); // currentUserEmail dependency 추가
 
+  // [즐겨찾기 전용] 즐겨찾기 목록이 갱신되거나 viewMode가 FAVORITES로 전환될 때 테이블의 users 목록을 실시간 동기화
+  useEffect(() => {
+    if (viewMode === 'FAVORITES') {
+      const favEmpIds = new Set(favorites.map(f => f.targetEmpId));
+      const filtered = empList.filter(emp => favEmpIds.has(emp.id));
+      setUsers(filtered);
+    }
+  }, [favorites, viewMode, empList]);
+
   // 2. 상태 저장 (Save State on Change)
   useEffect(() => {
+
     //로딩중이거나 데이터 없으면 캐시 저장 X
     if (isLoading || !data) return;
 
@@ -591,7 +633,25 @@ export default function OrgChart() {
   };
 
   return (
-    <FluentProvider theme={webLightTheme} style={{ display: "flex", height: "100vh", backgroundColor: theme.colors.bgMain }}>
+    <FluentProvider theme={webLightTheme} style={{ display: "flex", flexDirection: "column", height: "100vh", backgroundColor: theme.colors.bgMain }}>
+      {isHrUnregistered && (
+        <div style={{
+          backgroundColor: "#fde7e9",
+          color: "#a80000",
+          padding: "10px 20px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "10px",
+          fontSize: "13px",
+          fontWeight: "bold",
+          borderBottom: "1px solid #f3b6b7",
+          flexShrink: 0
+        }}>
+          <span style={{ fontSize: "15px" }}>⚠️</span>
+          <span>HR 시스템에 본인 사원 정보(이메일 매핑)가 등록되어 있지 않아 즐겨찾기 기능을 사용할 수 없습니다. 인사담당자에게 문의해 주세요.</span>
+        </div>
+      )}
       <div
         ref={containerRef}
         style={{
@@ -632,7 +692,7 @@ export default function OrgChart() {
             // borderRight: `1px solid ${theme.colors.border}`, // 핸들로 대체
             display: "flex",
             flexDirection: "column",
-            padding: "16px",
+            padding: "12px",
             // overflowY: "hidden", // OrgTree 내부 스크롤 사용
             flexShrink: 0,
           }}
@@ -641,10 +701,48 @@ export default function OrgChart() {
             조직도
           </h2> */}
 
-          <div style={{ flex: 1, overflow: "auto" }}>
+          <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", gap: "6px" }}>
+            {/* ⭐ 즐겨찾는 멤버 고정 버튼 */}
+            <div
+              onClick={() => {
+                setViewMode('FAVORITES');
+                setSelectedOrgId("");
+                setCurrentOrg(null);
+                // 즐겨찾기 목록 필터링
+                const favEmpIds = new Set(favorites.map(f => f.targetEmpId));
+                const filtered = empList.filter(emp => favEmpIds.has(emp.id));
+                setUsers(filtered);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "6px 10px",
+                cursor: "pointer",
+                borderRadius: "4px",
+                backgroundColor: viewMode === 'FAVORITES' ? "#F3F2F1" : "transparent",
+                border: `1px solid ${viewMode === 'FAVORITES' ? "#6264A7" : "transparent"}`,
+                transition: "all 0.15s ease-in-out",
+                userSelect: "none",
+                flexShrink: 0
+              }}
+              onMouseEnter={(e) => {
+                if (viewMode !== 'FAVORITES') e.currentTarget.style.backgroundColor = "#faf9f8";
+              }}
+              onMouseLeave={(e) => {
+                if (viewMode !== 'FAVORITES') e.currentTarget.style.backgroundColor = "transparent";
+              }}
+            >
+              <Star24Filled color="#FDB913" style={{ width: "20px", height: "20px" }} />
+              <span style={{ fontSize: "13px", fontWeight: "600", color: "#242424" }}>
+                즐겨찾는 멤버 ({favorites.length})
+              </span>
+            </div>
+
             {/* OrgTreeView 컴포넌트를 사용하여 조직 계층 구조 표시 */}
             {/* OrgTreeView 컴포넌트를 사용하여 조직 계층 구조 표시 */}
             <OrgTreeView
+
               onSelectOrg={handleOrgSelect}
               selectedOrgId={selectedOrgId}
               onSearch={handleSearch}
@@ -688,8 +786,12 @@ export default function OrgChart() {
           {/* 2-1. Center Content (사용자 목록 그리드 영역) - 상단 80% */}
           <div style={{ flex: 4, padding: "10px", overflow: "hidden", display: "flex", flexDirection: "column" }}>
             <h2 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "15px", color: theme.colors.textMain }}>
-              {isSearchMode ? "검색 결과" : (currentOrg ? currentOrg.orgName : "전체 조직")} <span style={{ color: theme.colors.primary }}>{users.length}</span>
+              {viewMode === 'FAVORITES'
+                ? "즐겨찾는 멤버"
+                : (isSearchMode ? "검색 결과" : (currentOrg ? currentOrg.orgName : "전체 조직"))}{" "}
+              <span style={{ color: theme.colors.primary }}>{users.length}</span>
             </h2>
+
 
             <div style={{ backgroundColor: theme.colors.bgWhite, boxShadow: theme.shadow.default, borderRadius: theme.radius.small, overflow: "hidden", display: "flex", flexDirection: "column", flex: 1, position: "relative" }}>
               {/* 로딩 스피너 */}
@@ -733,9 +835,33 @@ export default function OrgChart() {
                           />
                         </td>
                         <td style={{ ...tdStyle, display: "flex", alignItems: "center", gap: "12px" }}>
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation(); // 행 클릭 이벤트(상세팝업) 방지
+                              if (emp.id) {
+                                if (isFavorite(emp.id)) {
+                                  removeFavorite(emp.id, emp.name);
+                                } else {
+                                  addFavorite(emp.id, emp.name);
+                                }
+                              } else {
+                                setToastMessage("사번 정보가 없어 즐겨찾기 등록이 불가능합니다.");
+                              }
+                            }}
+                            style={{ display: "flex", alignItems: "center", cursor: "pointer", transition: "transform 0.1s" }}
+                            onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.2)"}
+                            onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}
+                          >
+                            {emp.id && isFavorite(emp.id) ? (
+                              <Star24Filled color="#FDB913" />
+                            ) : (
+                              <Star24Regular color="#c8c6c4" />
+                            )}
+                          </div>
                           <AvatarWithStatus name={emp.name} photoUrl={getPhotoUrl(emp.email)} status={presenceMap[emp.email]} size={32} />
                           {emp.name}
                         </td>
+
                         <td style={tdStyle}>{emp.position}</td>
                         <td style={tdStyle}>{emp.role}</td>
                         <td style={tdStyle}>{emp.department}</td>
@@ -886,9 +1012,39 @@ export default function OrgChart() {
                 {/* 정보 텍스트 */}
                 <div style={{ flex: 1, color: theme.colors.textMain }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "20px" }}>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                       <span style={{ fontSize: "20px", fontWeight: "bold", color: theme.colors.textMain }}>{selectedUser.name}</span>
-                      <span style={{ fontSize: "14px", color: theme.colors.textSecondary }}>{selectedUser.position}</span>
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (selectedUser.id) {
+                            if (isFavorite(selectedUser.id)) {
+                              removeFavorite(selectedUser.id, selectedUser.name);
+                            } else {
+                              addFavorite(selectedUser.id, selectedUser.name);
+                            }
+                          } else {
+                            setToastMessage("사번 정보가 없어 즐겨찾기 등록이 불가능합니다.");
+                          }
+                        }}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          cursor: "pointer",
+                          transition: "transform 0.1s ease",
+                          userSelect: "none"
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.2)"}
+                        onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}
+                        title={selectedUser.id && isFavorite(selectedUser.id) ? "즐겨찾기 해제" : "즐겨찾기 추가"}
+                      >
+                        {selectedUser.id && isFavorite(selectedUser.id) ? (
+                          <Star24Filled color="#FDB913" />
+                        ) : (
+                          <Star24Regular color="#c8c6c4" />
+                        )}
+                      </div>
+                      <span style={{ fontSize: "14px", color: theme.colors.textSecondary, marginLeft: "4px" }}>{selectedUser.position}</span>
                     </div>
                     <div style={{ fontSize: "14px", color: theme.colors.textSecondary }}>
                       <strong>{selectedUser.companyName}</strong> | {selectedUser.department} | {selectedUser.role}

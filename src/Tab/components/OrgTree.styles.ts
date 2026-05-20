@@ -5,7 +5,8 @@ import { theme } from "../constants/theme";
 
 export const treeContainerStyle: React.CSSProperties = {
     width: "100%",
-    height: "100%",
+    flex: 1,
+    minHeight: 0,
     display: "flex",
     flexDirection: "column",
     backgroundColor: "#f9f9f9",
@@ -18,8 +19,8 @@ export const topControlAreaStyle: React.CSSProperties = {
     borderBottom: "1px solid #e1e1e1",
     display: "flex",
     flexDirection: "column",
-    gap: "8px",
-    paddingBottom: "15px",
+    gap: "6px",
+    paddingBottom: "10px",
 };
 
 export const companySelectStyle: React.CSSProperties = {

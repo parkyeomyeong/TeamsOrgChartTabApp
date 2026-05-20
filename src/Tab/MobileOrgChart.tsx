@@ -10,11 +10,12 @@ import { Toast } from "./components/Toast";
 import { Spinner } from "./components/Spinner";
 import { Employee, OrgData, OrgTreeNode, UserPresence } from "./types";
 import { buildOrgTree, calculateTotalCounts, getAllAncestorIds, getAllDescendantIds } from "./utils/orgTreeUtils";
-import { Dismiss24Regular } from "@fluentui/react-icons";
+import { Dismiss24Regular, Star24Filled, Star24Regular } from "@fluentui/react-icons";
 import { theme } from "./constants/theme";
 import copyIcon from "../assets/copy.png";
 import { Folder24Regular, FolderOpen24Regular, PeopleTeam24Regular, Building24Regular } from "@fluentui/react-icons";
 import { Call24Regular, Chat24Regular, Calendar24Regular, Mail24Regular, Search24Regular } from "@fluentui/react-icons";
+import { useFavorites } from "./hooks/useFavorites";
 
 // ============================
 // 모바일 조직도 메인 컴포넌트
@@ -34,8 +35,23 @@ export default function MobileOrgChart() {
     const [selectedUser, setSelectedUser] = useState<Employee | null>(null);
     const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
     const [toastMessage, setToastMessage] = useState<string | null>(null);
+    const [viewMode, setViewMode] = useState<'BROWSE' | 'FAVORITES'>('BROWSE');
 
     const isLoading = isApiLoading || isAuthLoading;
+
+    // --- 즐겨찾기(Favorites) 훅 연동 ---
+    const { favorites, addFavorite, removeFavorite, isFavorite } = useFavorites(
+        token,
+        currentUserEmail,
+        updateToken,
+        setToastMessage
+    );
+
+    // [즐겨찾기 전용] 즐겨찾는 멤버 목록 메모 (사번 기반 매칭)
+    const favoriteEmployees = useMemo(() => {
+        const favEmpIds = new Set(favorites.map(f => f.targetEmpId));
+        return empList.filter(emp => emp.id && favEmpIds.has(emp.id));
+    }, [favorites, empList]);
 
     // --- 메모 ---
     const orgMap = useMemo(() => new Map(orgList.map(o => [o.orgId, o])), [orgList]);
@@ -286,27 +302,140 @@ export default function MobileOrgChart() {
                     </select>
                 </div>
 
-                {/* ── 메인: 조직도 + 직원 통합 트리 ── */}
+                {/* ── 탭 메뉴 (전체 / 즐겨찾기) ── */}
+                <div style={{
+                    display: "flex",
+                    backgroundColor: theme.colors.bgWhite,
+                    borderBottom: `1px solid ${theme.colors.border}`,
+                    flexShrink: 0
+                }}>
+                    <button
+                        onClick={() => setViewMode('BROWSE')}
+                        style={{
+                            flex: 1,
+                            padding: "12px",
+                            border: "none",
+                            background: "none",
+                            fontSize: "14px",
+                            fontWeight: viewMode === 'BROWSE' ? "600" : "normal",
+                            color: viewMode === 'BROWSE' ? "#6264A7" : theme.colors.textSecondary,
+                            borderBottom: `2px solid ${viewMode === 'BROWSE' ? "#6264A7" : "transparent"}`,
+                            cursor: "pointer",
+                            transition: "all 0.2s ease"
+                        }}
+                    >
+                        전체 조직도
+                    </button>
+                    <button
+                        onClick={() => setViewMode('FAVORITES')}
+                        style={{
+                            flex: 1,
+                            padding: "12px",
+                            border: "none",
+                            background: "none",
+                            fontSize: "14px",
+                            fontWeight: viewMode === 'FAVORITES' ? "600" : "normal",
+                            color: viewMode === 'FAVORITES' ? "#6264A7" : theme.colors.textSecondary,
+                            borderBottom: `2px solid ${viewMode === 'FAVORITES' ? "#6264A7" : "transparent"}`,
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "6px",
+                            transition: "all 0.2s ease"
+                        }}
+                    >
+                        <Star24Filled color={viewMode === 'FAVORITES' ? "#FDB913" : "#c8c6c4"} style={{ width: "16px", height: "16px" }} />
+                        즐겨찾는 멤버 ({favorites.length})
+                    </button>
+                </div>
+
+                {/* ── 메인: 조직도 + 직원 통합 트리 vs 즐겨찾는 멤버 리스트 ── */}
                 <div style={{ flex: 1, overflowY: "auto", paddingBottom: checkedIds.size > 0 ? "64px" : "0" }}>
-                    {treeData.map(node => (
-                        <MobileTreeNode
-                            key={node.orgId}
-                            node={node}
-                            depth={0}
-                            expandedIds={expandedIds}
-                            onToggle={handleToggle}
-                            empByOrgId={empByOrgId}
-                            memberCounts={memberCounts}
-                            presenceMap={presenceMap}
-                            getPhotoUrl={getPhotoUrl}
-                            checkedIds={checkedIds}
-                            onCheck={handleCheck}
-                            onOrgCheck={handleOrgCheck}
-                            onSelectUser={setSelectedUser}
-                            searchFilter={searchFilter}
-                            matchedOrgIds={matchedOrgIds}
-                        />
-                    ))}
+                    {viewMode === 'FAVORITES' ? (
+                        <div style={{ backgroundColor: theme.colors.bgWhite }}>
+                            {favoriteEmployees.length === 0 ? (
+                                <div style={{ padding: "40px 20px", textAlign: "center", color: theme.colors.textSecondary, fontSize: "14px" }}>
+                                    등록된 즐겨찾는 멤버가 없습니다.
+                                </div>
+                            ) : (
+                                favoriteEmployees.map(emp => (
+                                    <div
+                                        key={emp.id}
+                                        style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: "10px",
+                                            padding: "12px 16px",
+                                            borderBottom: `1px solid ${theme.colors.border}`,
+                                            backgroundColor: theme.colors.bgWhite,
+                                        }}
+                                    >
+                                        <div
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (isFavorite(emp.id)) {
+                                                    removeFavorite(emp.id, emp.name);
+                                                } else {
+                                                    addFavorite(emp.id, emp.name);
+                                                }
+                                            }}
+                                            style={{ display: "flex", alignItems: "center", cursor: "pointer", transition: "transform 0.1s" }}
+                                            onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.2)"}
+                                            onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}
+                                        >
+                                            {emp.id && isFavorite(emp.id) ? (
+                                                <Star24Filled color="#FDB913" />
+                                            ) : (
+                                                <Star24Regular color="#c8c6c4" />
+                                            )}
+                                        </div>
+                                        <div onClick={() => setSelectedUser(emp)} style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1, cursor: "pointer" }}>
+                                            <AvatarWithStatus name={emp.name} photoUrl={getPhotoUrl(emp.email)} status={presenceMap[emp.email]} size={32} />
+                                            <div>
+                                                <span style={{ fontSize: "14px", color: theme.colors.textMain, fontWeight: "500" }}>{emp.name}</span>
+                                                <span style={{ fontSize: "13px", color: theme.colors.textSecondary, marginLeft: "6px" }}>
+                                                    {emp.position}{emp.role && emp.role !== "-" ? ` (${emp.role})` : ""}
+                                                </span>
+                                                <div style={{ fontSize: "11px", color: theme.colors.textSecondary, marginTop: "2px" }}>
+                                                    {emp.companyName} | {emp.department}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <input
+                                            type="checkbox"
+                                            checked={checkedIds.has(emp.id)}
+                                            onChange={() => handleCheck(emp.id)}
+                                            style={{ width: "20px", height: "20px", cursor: "pointer", accentColor: theme.colors.primary }}
+                                        />
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    ) : (
+                        treeData.map(node => (
+                            <MobileTreeNode
+                                key={node.orgId}
+                                node={node}
+                                depth={0}
+                                expandedIds={expandedIds}
+                                onToggle={handleToggle}
+                                empByOrgId={empByOrgId}
+                                memberCounts={memberCounts}
+                                presenceMap={presenceMap}
+                                getPhotoUrl={getPhotoUrl}
+                                checkedIds={checkedIds}
+                                onCheck={handleCheck}
+                                onOrgCheck={handleOrgCheck}
+                                onSelectUser={setSelectedUser}
+                                searchFilter={searchFilter}
+                                matchedOrgIds={matchedOrgIds}
+                                isFavorite={isFavorite}
+                                addFavorite={addFavorite}
+                                removeFavorite={removeFavorite}
+                            />
+                        ))
+                    )}
                 </div>
 
                 {/* ── 하단 선택 액션바 ── */}
@@ -389,9 +518,28 @@ export default function MobileOrgChart() {
                                 <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
                                     <AvatarWithStatus name={selectedUser.name} photoUrl={getPhotoUrl(selectedUser.email)} status={presenceMap[selectedUser.email]} size={48} />
                                     <div>
-                                        <div style={{ fontSize: "18px", fontWeight: "bold", color: theme.colors.textMain }}>
+                                        <div style={{ fontSize: "18px", fontWeight: "bold", color: theme.colors.textMain, display: "flex", alignItems: "center", gap: "6px" }}>
                                             {selectedUser.name}
-                                            <span style={{ fontSize: "14px", fontWeight: "normal", color: theme.colors.textSecondary, marginLeft: "8px" }}>
+                                            <div
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (isFavorite(selectedUser.id)) {
+                                                        removeFavorite(selectedUser.id, selectedUser.name);
+                                                    } else {
+                                                        addFavorite(selectedUser.id, selectedUser.name);
+                                                    }
+                                                }}
+                                                style={{ display: "flex", alignItems: "center", cursor: "pointer", transition: "transform 0.1s" }}
+                                                onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.2)"}
+                                                onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}
+                                            >
+                                                {selectedUser.id && isFavorite(selectedUser.id) ? (
+                                                    <Star24Filled color="#FDB913" />
+                                                ) : (
+                                                    <Star24Regular color="#c8c6c4" />
+                                                )}
+                                            </div>
+                                            <span style={{ fontSize: "14px", fontWeight: "normal", color: theme.colors.textSecondary, marginLeft: "2px" }}>
                                                 {selectedUser.position}{selectedUser.role && selectedUser.role !== "-" ? ` (${selectedUser.role})` : ""}
                                             </span>
                                         </div>
@@ -453,7 +601,10 @@ const MobileTreeNode: React.FC<{
     searchFilter: (emp: Employee) => boolean;
     matchedOrgIds: Set<string> | null;
     getPhotoUrl: (email: string) => string | undefined;
-}> = ({ node, depth, expandedIds, onToggle, empByOrgId, memberCounts, presenceMap, checkedIds, onCheck, onOrgCheck, onSelectUser, searchFilter, matchedOrgIds, getPhotoUrl }) => {
+    isFavorite: (empId: string) => boolean;
+    addFavorite: (empId: string, name?: string) => Promise<boolean>;
+    removeFavorite: (empId: string, name?: string) => Promise<boolean>;
+}> = ({ node, depth, expandedIds, onToggle, empByOrgId, memberCounts, presenceMap, checkedIds, onCheck, onOrgCheck, onSelectUser, searchFilter, matchedOrgIds, getPhotoUrl, isFavorite, addFavorite, removeFavorite }) => {
     const isExpanded = expandedIds.has(node.orgId);
     const hasChildren = node.children && node.children.length > 0;
     const count = memberCounts.get(node.orgId) || 0;
@@ -524,6 +675,23 @@ const MobileTreeNode: React.FC<{
                         backgroundColor: theme.colors.bgWhite,
                     }}
                 >
+                    <div
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (isFavorite(emp.id)) {
+                                removeFavorite(emp.id, emp.name);
+                            } else {
+                                addFavorite(emp.id, emp.name);
+                            }
+                        }}
+                        style={{ display: "flex", alignItems: "center", cursor: "pointer", transition: "transform 0.1s" }}
+                    >
+                        {emp.id && isFavorite(emp.id) ? (
+                            <Star24Filled color="#FDB913" />
+                        ) : (
+                            <Star24Regular color="#c8c6c4" />
+                        )}
+                    </div>
                     <div onClick={() => onSelectUser(emp)} style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1, cursor: "pointer" }}>
                         <AvatarWithStatus name={emp.name} photoUrl={getPhotoUrl(emp.email)} status={presenceMap[emp.email]} size={32} />
                         <div>
@@ -554,6 +722,9 @@ const MobileTreeNode: React.FC<{
                     onSelectUser={onSelectUser}
                     searchFilter={searchFilter} matchedOrgIds={matchedOrgIds}
                     getPhotoUrl={getPhotoUrl}
+                    isFavorite={isFavorite}
+                    addFavorite={addFavorite}
+                    removeFavorite={removeFavorite}
                 />
             ))}
         </div>
