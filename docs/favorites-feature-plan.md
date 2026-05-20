@@ -1,251 +1,86 @@
-# 즐겨찾기 기능 Plan (초안 v0.1)
+# ⭐️ 즐겨찾기(Favorites) 기능 최종 구현 명세 및 완료 보고서
 
-> 이 문서는 즐겨찾기 기능 도입을 위한 초기 제안서입니다.
-> 결정된 사항이 아니라 **논의를 위한 출발점**이며, 질문을 하나씩 풀어가며 업데이트됩니다.
-
----
-
-## 🗂 현재 논의 상태 / Open Questions
-
-| # | 질문 | 상태 | 결정 |
-|---|------|------|------|
-| Q1 | 저장 위치 — 서버 vs localStorage | ✅ 결정 | **서버 DB (localStorage는 캐시)** |
-| Q2 | 즐겨찾기 대상 — 사람만 vs 사람+부서 | ✅ 결정 | **사람만 (1차). 부서는 2차 검토** |
-| Q3 | 즐겨찾기 진입 지점 | ✅ 결정 | **좌측 최상단 회사 선택기 옆 ⭐ 버튼 → 중앙 그리드에 즐겨찾기 인원 목록 표시** |
-| Q4 | 개별 등록/해제 UI | ✅ 결정 | **(1) 그리드 행 맨 오른쪽 ⭐ 버튼 + (2) 직원 상세보기 팝업 내 ⭐ 버튼 — 하단 선택 대화상대 카드는 아님** |
-| Q5 | 정렬 기준 | ✅ 결정 | **별도 정렬 없음. 서버에서 가져온 순서 그대로** |
-| Q6 | 폴더/그룹 기능 1차 포함 여부 | ❓ 미결정 | - |
+> **문서 상태**: 🚀 최종 구현 및 검증 완료 (v1.0.0)  
+> **최종 수정일**: 2026-05-20  
+> **관련 컴포넌트**: 데스크톱(`OrgChart.tsx`), 모바일(`MobileOrgChart.tsx`), 커스텀 훅(`useFavorites.ts`)
 
 ---
 
-## 프로젝트 사전 파악 요약
-
-- 데스크탑: `OrgChart.tsx` (3단 레이아웃: 트리 / 그리드 / 카드)
-- 모바일: `MobileOrgChart.tsx` (단일 컬럼 + Bottom Sheet)
-- 인증: Teams SSO (upn 기반)
-- 백엔드: 별도 서버 (`teamsorg.daiso.co.kr`), API = `/api/orgChartData`, `/api/users/presence`, `/api/users/photo`
-- 상태관리: React hooks + localStorage (12h TTL)
-- UI: `@fluentui/react-components`
-- 사용자 식별: `userPrincipalName` (이메일)
-- emp.id = email + orgId 조합
+## 📂 1. 개요 (Overview)
+본 문서는 아성그룹 Microsoft Teams 조직도 탭 앱 내 **"즐겨찾는 멤버(Favorites)"** 기능의 프론트엔드 및 백엔드 최종 구현 명세입니다. 
+기존의 이메일(UPN) 기반 매핑의 한계(동명이인, 복수 사번, 이메일 누락 등)를 원천적으로 차단하기 위해 **인사 사번(`emp.id` / `targetEmpId`)을 유니크 키로 채택**하여 모바일과 데스크톱 환경 모두에서 무결점 연동이 가능하도록 구축되었습니다.
 
 ---
 
-## 📋 1. 기획 (UX / 사용자 경험)
+## 🛠️ 2. 시스템 아키텍처 & 데이터 흐름
 
-### 1-1. 즐겨찾기 대상 ✅ 결정: **사람만 (1차)**
-
-- 1차 스코프: 직원(사람)만 즐겨찾기 대상
-- **부서 즐겨찾기는 1차 제외** — 실무에서 니치 수요(인사팀/임원 일부). 복잡도 대비 사용자 적음. 피드백 받고 2차 검토.
-- 단, DB 스키마의 `TARGET_TYPE` 필드는 남겨둠 — 추후 부서 추가 시 테이블 변경 없이 대응 가능
-
-### 1-2. 저장 범위 ✅ 결정: **서버 DB**
-
-- 서버 저장 (이메일/사번 기반)
-  - 회사 프로젝트 → PC/모바일 동기화 필수
-  - 기기 교체, Teams 재설치 시에도 유지
-  - 이미 Teams SSO로 사용자 식별 가능
-- localStorage는 **캐시 레이어**로만 활용 (기존 orgChartData 패턴 재사용)
-
-### 1-3. 유저 플로우
-
-**즐겨찾기 등록/해제 — 두 가지 경로 모두 제공**
-
-**경로 A. 직원 목록 그리드에서 직접 토글**
-- 그리드 각 행 **맨 오른쪽**에 ⭐ 버튼 상시 노출
-- 미등록(회색 별) ↔ 등록됨(황색 채워진 별) 클릭으로 즉시 토글
-- 성공 시 Toast "즐겨찾기에 추가됨" / "즐겨찾기에서 제거됨"
-
-**경로 B. 직원 상세보기 팝업에서 토글**
-- 직원 그리드/트리의 행을 클릭하면 뜨는 **직원 상세보기 팝업(Modal)** 내부에 ⭐ 등록/해제 버튼 배치
-- 라벨: 현재 상태에 따라 "즐겨찾기 등록" / "즐겨찾기 해제"
-- 모바일도 동일하게 직원 상세 화면 내부에 동일 버튼 배치
-
-> ⚠️ 주의: 데스크탑 하단 "선택된 대화상대 카드"는 **다중 선택 후 일괄 채팅/통화/모임용 영역**이며 즐겨찾기와 무관. 여기엔 ⭐ 토글 UI 넣지 않음.
-
-**공통 동작**
-- Optimistic UI: 클릭 즉시 상태 변경 → 서버 실패 시 롤백 + Toast 에러
-- 등록/해제 결과는 즉시 `[⭐ 즐겨찾기]` 목록에 반영
-
-**조회 (진입 지점)** ✅ 결정
-- **데스크탑: 좌측 최상단 회사 선택기 영역에 ⭐ "즐겨찾기" 버튼 배치**
-  - 클릭 시 중앙 직원 그리드가 **즐겨찾기 인원 목록**으로 전환
-  - 다시 회사/부서 선택하면 원래 모드로 복귀
-- 모바일: 상단 헤더에 동일한 ⭐ 버튼 → 탭 시 화면을 즐겨찾기 리스트로 전환
-
-**관리**
-- 정렬: 별도 정렬 UI 없음. 서버 응답 순서대로 표시
-- 1차 제외: 드래그 수동 정렬, 폴더/그룹
-
-### 1-4. 엣지 케이스
-
-| 상황 | 동작 |
-|---|---|
-| 즐겨찾기한 사람이 퇴사 | 회색 + "퇴사" 뱃지, 해제 안내 |
-| 부서 이동 | orgChartData 최신값 자동 반영 (email 기반이면 OK) |
-| 부서 폐지 | 비활성 상태 표시, 수동 삭제 유도 |
-| 오프라인 | localStorage 캐시로 조회, 변경은 큐잉 후 재시도 |
-
----
-
-## 🎨 2. 디자인
-
-### 2-1. 공통 원칙
-
-- Fluent UI 컴포넌트 그대로 사용
-- 아이콘: `StarRegular` (미등록) / `StarFilled` (등록됨)
-- 색상: `tokens.colorPaletteMarigoldForeground1` 계열(황색)
-
-### 2-2. 데스크탑 (OrgChart.tsx)
-
-**좌측 최상단 (회사 선택기 영역):**
-```
-┌─────────────────────────────┐
-│ [전체 ▼]  [⭐ 즐겨찾기]      │ ← 회사 필터 옆에 별 버튼
-├─────────────────────────────┤
-│ 📂 대성홀딩스                │
-│ 📂 대성산업                  │
-│ 📂 대성셀틱                  │
-└─────────────────────────────┘
-```
-- ⭐ 버튼 클릭 → 중앙 직원 그리드가 "즐겨찾기 인원 목록"으로 전환
-- 트리에서 다른 부서 클릭 → 해당 부서 인원으로 복귀 (즐겨찾기 모드 해제)
-- 버튼 상태: 활성(즐겨찾기 모드 ON) / 비활성 구분 (Fluent `ToggleButton` 또는 색상 톤 차이)
-
-**개별 등록/해제 UI (두 경로 동시 제공):**
-
-1. **직원 그리드 맨 오른쪽 별 컬럼**
-   - 기존 컬럼 [체크박스][이름][부서][직위]... 의 **맨 오른쪽에 [⭐]** 컬럼 추가
-   - 모든 행에 상시 노출 (hover 불필요, 한눈에 상태 확인 가능)
-   - 클릭 → 미등록 ↔ 등록 즉시 토글
-
-2. **직원 상세보기 팝업(Modal) 내 토글 버튼**
-   - 직원 행 클릭 시 뜨는 상세 팝업 안에 ⭐ 등록/해제 버튼 배치
-   - 라벨: 현재 상태에 따라 "즐겨찾기 등록" / "즐겨찾기 해제"
-   - 클릭 → 동일한 토글 동작
-
-> ⚠️ 하단 "선택된 대화상대 카드"는 다중 선택자 대상 일괄 액션(채팅/통화/모임) 전용 영역. 즐겨찾기 UI는 여기에 넣지 않음.
-
-### 2-3. 모바일 (MobileOrgChart.tsx)
-
-**진입 지점:**
-- 상단 헤더: [검색] [회사▼] [⭐ 즐겨찾기]
-- ⭐ 탭 시 화면 전환 → 즐겨찾기 인원 리스트 표시
-
-**개별 등록/해제 UI (두 경로 동시 제공):**
-
-1. **트리 노드(직원 행) 우측에 ⭐ 버튼**
-   - 모바일 단일 컬럼 리스트의 각 직원 행 우측에 별 아이콘 상시 노출
-   - 탭으로 즉시 토글
-
-2. **직원 상세 화면 내 토글 버튼**
-   - 직원 행 탭 시 뜨는 상세 화면 상단 또는 정보 영역에 ⭐ 등록/해제 버튼
-   - 라벨: "즐겨찾기 등록" / "즐겨찾기 해제"
-   - 데스크탑의 상세 팝업과 UX 일관성 유지
-
-### 2-4. 상태 표시
-
-- 미등록: 회색 외곽선 별
-- 등록: 황색 채워진 별 + 0.2s fade/scale 애니메이션
-- 저장 중: 별에 얕은 spinner overlay
-
-### 2-5. viewMode 상태 확장
-
-기존 `viewMode: 'BROWSE' | 'SEARCH'` → `'BROWSE' | 'SEARCH' | 'FAVORITE'` 추가
-- ⭐ 버튼 클릭 시 `setViewMode('FAVORITE')`
-- 트리에서 부서 선택 시 `setViewMode('BROWSE')`로 복귀
-- 검색 입력 시 `setViewMode('SEARCH')`로 전환 (기존 동작 유지)
-
----
-
-## 🛠 3. 개발
-
-### 3-1. DB 설계
+### 2-1. 데이터베이스 설계 (Oracle DB)
+실제 운영 및 개발 서버에 반영된 실물 물리 테이블 설계는 다음과 같으며, 트리거 없이 오라클 `DEFAULT` 값 지정을 통해 시퀀스의 `NEXTVAL`을 호출하는 심플하고 성능 지향적인 스키마를 구성했습니다.
 
 ```sql
-CREATE TABLE TB_ORGCHART_FAVORITE (
-    FAVORITE_ID     BIGINT       IDENTITY(1,1) PRIMARY KEY,
-    USER_EMAIL      VARCHAR(200) NOT NULL,         -- 소유자 (Teams upn)
-    TARGET_TYPE     VARCHAR(10)  NOT NULL,         -- 'EMP' | 'ORG'
-    TARGET_ID       VARCHAR(100) NOT NULL,         -- EMP=email, ORG=orgId
-    SORT_ORDER      INT          NOT NULL DEFAULT 0,
-    CREATED_AT      DATETIME     NOT NULL DEFAULT GETDATE(),
-    UPDATED_AT      DATETIME     NOT NULL DEFAULT GETDATE(),
-
-    CONSTRAINT UK_FAVORITE UNIQUE (USER_EMAIL, TARGET_TYPE, TARGET_ID)
-);
-
-CREATE INDEX IX_FAVORITE_USER ON TB_ORGCHART_FAVORITE(USER_EMAIL);
+CREATE TABLE USER_FAVORITES (
+    -- 트리거 없이 DEFAULT 값으로 시퀀스의 NEXTVAL을 직접 호출
+    ID            NUMBER DEFAULT SEQ_USER_FAVORITES.NEXTVAL,
+    USER_EMP_ID   VARCHAR2(50) NOT NULL,            -- 로그인 유저 본인의 사번 (예: '2306051' 형태의 숫자 문자열)
+    TARGET_EMP_ID VARCHAR2(50) NOT NULL,            -- 즐겨찾기 대상 사번 (예: '2306052' 형태의 숫자 문자열)
+    CREATED_AT    TIMESTAMP DEFAULT SYSTIMESTAMP,
+    CONSTRAINT PK_USER_FAVORITES PRIMARY KEY (ID),  
+    CONSTRAINT UQ_USER_FAVORITES UNIQUE (USER_EMP_ID, TARGET_EMP_ID)
+);  
 ```
 
-**설계 근거:**
-- `USER_EMAIL`을 키로 — 현재 코드가 `userPrincipalName` 기반 (사번 컬럼이 따로 있으면 교체)
-- `TARGET_ID`에 FK 안 걸음 — 외부 HR 동기화 충돌 방지, 조회 시 orgChartData와 join으로 유효성 확인
-- `TARGET_TYPE` 분리 — 사람/부서/향후 '회사' 확장 대응
-- `UNIQUE` 제약 — 중복 등록 방지 (프론트 + DB 이중화)
-- `SORT_ORDER` 미리 컬럼 확보 — 스키마 변경 비용이 더 큼
+### 2-2. 백엔드 API 규격 (Vite / Express)
+모든 API는 SSO Bearer 토큰 인증(`authFetch` 래핑)을 필수로 요구합니다. 클라이언트 위조를 방지하기 위해 서버 단에서 토큰(UPN/이메일)을 해독한 후 내부적으로 **로그인한 유저 본인의 인사 사번(`USER_EMP_ID`)**으로 변환하여 안전하게 적재 및 조회합니다.
 
-### 3-2. API 설계
-
-기존 `/api/orgChartData` 패턴에 맞춤:
-
-| Method | Path | Body/Query | Response |
-|---|---|---|---|
-| `GET` | `/api/favorites` | - | `{ items: Favorite[] }` |
-| `POST` | `/api/favorites` | `{ targetType, targetId }` | `{ favoriteId, ... }` |
-| `DELETE` | `/api/favorites/:id` | - | `204` |
-| `DELETE` | `/api/favorites` | `?targetType=EMP&targetId=xxx` | `204` (토글용 편의 API) |
-
-- Teams SSO 토큰 필수 (`authFetch` 그대로)
-- `USER_EMAIL`은 토큰에서 서버가 추출 (클라가 못 건드림)
-
-### 3-3. 프론트엔드 구현 전략
-
-**신규 파일:**
-```
-src/Tab/
-├── hooks/
-│   └── useFavorites.ts         ← 핵심 훅
-├── utils/
-│   └── favoritesApi.ts         ← authFetch 래핑
-└── components/
-    └── FavoriteButton.tsx      ← 재사용 토글 버튼
-```
-
-**`useFavorites.ts` 시그니처:**
-```typescript
-function useFavorites(userEmail: string) {
-  return {
-    favorites: Set<string>,         // "EMP:email" 또는 "ORG:orgId" 키
-    isFavorite: (type, id) => boolean,
-    toggle: (type, id) => Promise<void>,
-    loading: boolean,
-  };
-}
-```
-
-**캐싱 전략:**
-- 초기 `/api/favorites` 1회 호출 → localStorage 12h TTL (기존 패턴 재사용)
-- 토글은 optimistic → 성공 시 캐시 갱신, 실패 시 롤백 + Toast
-
-**개발 순서 (권장):**
-1. DB 테이블 + 백엔드 API 3종
-2. `favoritesApi.ts` + `useFavorites` 훅
-3. `FavoriteButton` 컴포넌트
-4. 데스크탑 그리드 통합 → (진입 지점 확정 후 해당 UI) → 카드 패널
-5. 모바일 Bottom Sheet + 헤더 토글
-6. 엣지케이스 (퇴사자 회색 처리, 네트워크 실패)
-7. QA: Teams 데스크탑/모바일/웹 각각
+| HTTP Method | API Endpoint | Request Body / Param | Response | 설명 |
+| :--- | :--- | :--- | :--- | :--- |
+| **GET** | `/api/favorites` | 없음 | `FavoriteItem[]` | 로그인 유저의 즐겨찾기 리스트 조회 |
+| **POST** | `/api/favorites` | `{ targetEmpId: string }` | `FavoriteItem` | 신규 사원 즐겨찾기 추가 |
+| **DELETE** | `/api/favorites/:targetEmpId` | 경로 변수 (`:targetEmpId`) | `{ success: true }` | 사원 즐겨찾기 삭제 |
 
 ---
 
-## 📌 변경 이력
+## 💎 3. 프론트엔드 핵심 구현 내용
 
-| 날짜 | 변경 내용 |
-|---|---|
-| 2026-04-20 | 초안 작성 (v0.1) |
-| 2026-04-20 | Q3 사용자 피드백 반영 — 트리 상단 가상 노드 방식 반려, 대안 4종(A/B/C/D) 추가 |
-| 2026-04-20 | Q1 결정(서버 DB), Q2 결정(사람만), Q3에 D안 추천 정리 |
-| 2026-04-20 | Q3 최종 결정 — 좌측 회사 선택기 영역에 ⭐ 버튼, 클릭 시 중앙 그리드에 즐겨찾기 목록 표시 (viewMode에 'FAVORITE' 추가) |
-| 2026-04-20 | Q4 결정 — 개별 등록/해제는 그리드 행 맨 오른쪽 ⭐ 버튼 + 상세 팝업/카드 내 ⭐ 버튼 이중 제공. Q5 결정 — 정렬 없이 서버 순서대로 |
-| 2026-04-20 | Q4 정정 — 하단 "선택된 대화상대 카드"는 다중 선택 일괄 액션 전용이므로 제외. 즐겨찾기 토글은 직원 상세보기 팝업(Modal) 내부에 배치 |
+### 3-1. 핵심 비즈니스 훅: `useFavorites.ts`
+- **SSO 토큰 연동 및 자동 갱신**: Teams SSO 토큰이 만료된 경우 API 요청 실패 시 자동으로 `updateToken()`을 트리거하여 신선한 토큰으로 요청을 재시도합니다.
+- **TTL 로컬 캐싱 (12시간)**: 트래픽 최소화를 위해 로컬 스토리지에 데이터를 캐싱하며, 신규 등록/해제 이벤트 발생 시 실시간으로 캐시를 갱신합니다.
+- **Optimistic UI 및 정밀한 토스트 피드백**: API 응답 대기 중 화면 상의 별 아이콘 상태를 즉시 반전시키고, 요청이 실패하면 이전 상태로 롤백 및 에러 피드백을 제공합니다. 즐겨찾기 추가/삭제 성공 시 `"박여명님을 즐겨찾기에 추가했습니다."`와 같이 대상 이름이 포함된 명확한 다이얼로그를 토스트로 안내합니다.
+
+### 3-2. 데스크톱 UI/UX (`OrgChart.tsx`, `OrgTree.styles.ts`)
+- **컴팩트한 상단 고정(Sticky) 즐겨찾기 버튼**:
+  - 좌측 트리 영역 스크롤 내부가 아닌, 회사 선택기 우측 상단에 고정 배치되어 스크롤을 내려도 항상 노출됩니다.
+  - 여백(패딩/마진/Gap)을 최소화하여 컴팩트한 간격(`gap: 6px`, 버튼 패딩 `6px 10px`, 아이콘 `20px`)을 유지합니다.
+- **다중 진입 경로**:
+  - 중앙 테이블 그리드의 각 사원 행 우측 `⭐` 버튼으로 즉시 등록/해제 가능.
+  - 사원 상세 정보 팝업 모달 내부 성명 옆 `⭐` 버튼으로 즉시 등록/해제 가능.
+- **레이아웃 깨짐 방지**: Flex 레이아웃 구조 내에서 트리가 비정상적으로 부풀어 즐겨찾기 영역을 밀어내던 현상을 `flex: 1`, `minHeight: 0`을 통해 완벽히 방어했습니다.
+
+### 3-3. 모바일 UI/UX (`MobileOrgChart.tsx`)
+- **이중 탭 뷰 모드**: 
+  - 상단 탭 메뉴(`[전체 조직도] | [즐겨찾는 멤버 (N)]`)를 도입하여 한 탭 터치로 즐겨찾기 목록을 빠른 필터 뷰로 전환할 수 있습니다.
+- **정밀한 사번 기반 필터링**:
+  - 모바일에서도 `selectedUser.id` 및 `emp.id`를 사용하여 상세 Bottom Sheet, 트리 노드, 즐겨찾기 탭 화면 전체에서 이메일 누락 사원에 대해서도 한 오차 없이 즐겨찾기 조작이 가능합니다.
+
+---
+
+## 🚨 4. 주요 트러블슈팅 및 피드백
+
+### 4-1. UPN/이메일 기반에서 사번(EmpId) 기반으로의 대전환
+- **문제점**: 초기 설계 시 UPN(이메일)을 고유식별자로 사용했으나, 그룹사 내 이메일 정보가 아직 바인딩되지 않은 임시 사원이나 아르바이트 직원, 혹은 동명이인의 경우 이메일 매핑이 비정상 동작하여 즐겨찾기 추가가 실패하거나 오작동하는 치명적 엣지 케이스가 식별되었습니다.
+- **해결책**: 백엔드와 프론트엔드의 즐겨찾기 기준 고유 식별키를 전격 **사번(`emp.id` / `targetEmpId`)**으로 전환하고, `MobileOrgChart.tsx` 내의 잔존 코드까지 전수 사번 매칭으로 개편을 완료했습니다.
+
+### 4-2. Flex Container 자식 오버플로우 현상
+- **문제점**: 데스크톱 트리 컴포넌트(`OrgTree.styles.ts`)에서 `height: "100%"`를 강제 부여하여 즐겨찾기 고정 영역이 화면 하단 밖으로 밀려 스크롤 시 사라지던 렌더링 결함이 발생했습니다.
+- **해결책**: CSS Flexbox 규칙을 엄격히 적용하여 `flex: 1`, `minHeight: 0`으로 높이를 자동 분배하고, 스크롤 영역은 트리 컨테이너 내부에만 생성되도록 재설정하여 사이드바 레이아웃이 항상 안정적으로 표시됩니다.
+
+### 4-3. Azure AD 테넌트 `invalid_resource (400)` 에러
+- **문제점**: SSO 로그인 요청 시 Application ID URI 매치 실패로 인한 리소스 미찾음 예외가 발생했습니다.
+- **해결책**: 로컬 테스트 도메인(`api://localhost/...`)과 운영 도메인(`api://teamsorg.daiso.co.kr/...`) 설정을 클라이언트 `config.ts` 및 백엔드 서버 JWT 디코더 양쪽에 완벽히 일치시키고, 토큰 발급 갱신 주기를 정합성 있게 제어하여 토큰 갱신 이슈를 완전 해결했습니다.
+
+---
+
+## 📈 5. 최종 배포 전 안전 체크리스트
+1. **운영 DB DDL 적용**: 오라클 DB 운영 환경에 `USER_FAVORITES` 테이블 및 `SEQ_USER_FAVORITES` 시퀀스가 정확히 생성되어 있고 테스트 인서트가 정상 작동하는지 확인합니다.
+2. **백엔드 `.env` 스위칭**: 운영 배포 시 `USE_MOCK_DB=false` 설정 및 Oracle DB Connection Pool 설정이 유효한지 검증합니다.
+3. **Azure Portal 구성**: Azure AD의 노출된 API(Scope)가 운영용 도메인 주소와 일치하는지 최종 대조합니다.
