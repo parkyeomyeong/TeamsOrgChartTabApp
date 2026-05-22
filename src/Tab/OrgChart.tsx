@@ -1107,7 +1107,7 @@ export default function OrgChart() {
 
 // --- 하위 스타일 컴포넌트 및 상수 ---
 
-const thStyle: CSSProperties = { padding: "10px", fontWeight: "600", color: theme.colors.textMain, fontSize: "13px", borderBottom: `1px solid ${theme.colors.border}` };
+const thStyle: CSSProperties = { padding: "10px", fontWeight: "600", color: theme.colors.textMain, fontSize: "13px", borderBottom: `1px solid ${theme.colors.border}`, textAlign: "center" };
 const tdStyle: CSSProperties = { padding: "10px", color: "#201f1e", fontSize: "14px" };
 const overlayStyle: CSSProperties = {
   position: "fixed", top: 0, left: 0, right: 0, bottom: 0,

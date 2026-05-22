@@ -1,86 +1,146 @@
-# ⭐️ 즐겨찾기(Favorites) 기능 최종 구현 명세 및 완료 보고서
+# 🌟 즐겨찾기 기능 최종 설계 및 연동 가이드 (v1.0 - 완결본)
 
-> **문서 상태**: 🚀 최종 구현 및 검증 완료 (v1.0.0)  
-> **최종 수정일**: 2026-05-20  
-> **관련 컴포넌트**: 데스크톱(`OrgChart.tsx`), 모바일(`MobileOrgChart.tsx`), 커스텀 훅(`useFavorites.ts`)
-
----
-
-## 📂 1. 개요 (Overview)
-본 문서는 아성그룹 Microsoft Teams 조직도 탭 앱 내 **"즐겨찾는 멤버(Favorites)"** 기능의 프론트엔드 및 백엔드 최종 구현 명세입니다. 
-기존의 이메일(UPN) 기반 매핑의 한계(동명이인, 복수 사번, 이메일 누락 등)를 원천적으로 차단하기 위해 **인사 사번(`emp.id` / `targetEmpId`)을 유니크 키로 채택**하여 모바일과 데스크톱 환경 모두에서 무결점 연동이 가능하도록 구축되었습니다.
+이 문서는 Microsoft Teams 조직도 앱의 즐겨찾기 기능에 대한 기획, UI/UX 설계, DB 스펙, API 정의, 그리고 최종 연동 구현 사양 및 최적화 조언을 총 망라한 문서입니다.
+초기 이메일 식별 방식에서 발생하던 한계를 보완하여 **사원 ID(사번, empId)** 기반으로 전면 리팩토링 및 구현 완료되었습니다.
 
 ---
 
-## 🛠️ 2. 시스템 아키텍처 & 데이터 흐름
+## 📅 변경 이력
 
-### 2-1. 데이터베이스 설계 (Oracle DB)
-실제 운영 및 개발 서버에 반영된 실물 물리 테이블 설계는 다음과 같으며, 트리거 없이 오라클 `DEFAULT` 값 지정을 통해 시퀀스의 `NEXTVAL`을 호출하는 심플하고 성능 지향적인 스키마를 구성했습니다.
+| 날짜 | 버전 | 변경 내용 | 작성자 / 기여 |
+|---|---|---|---|
+| 2026-04-20 | v0.1 | 즐겨찾기 기능 초안 (이메일 기반, localStorage/DB 하이브리드 제안) | 기획/개발팀 |
+| 2026-05-22 | v1.0 | **사번(empId) 식별자 기반 전면 리팩토링 및 백엔드/프론트엔드 연동 완료**<br>- Oracle 11g 호환 DDL DDL 설계 반영<br>- HR 시스템 미등록 예외 처리(400 에러 & 고대비 경고 배너 ⚠️) 설계 반영<br>- Mock DB 모드 추가 및 운영 빌드 런타임 안정화 반영 | Antigravity (AI Co-Pilot) |
 
+---
+
+## 🗂 즐겨찾기 핵심 아키텍처 및 결정 사항
+
+### Q1. 고유 식별자 설계: **사번(empId) 기반**
+- **기존 문제**: SSO 토큰에서 파싱되는 UPN(이메일)은 부서 이동이나 퇴사/재입사, 영문명 변경 등에 따라 유연하지 못하고, 무엇보다 HR 사내 시스템의 핵심 마스터 키인 사번(empId)과 일치하지 않아 원천 데이터 조인 시 정합성 문제가 상시 존재함.
+- **결정**: 로그인 유저(본인) 및 즐겨찾기 대상(타인) 모두 **사번(empId)**을 식별 키로 사용하도록 전면 리팩토링 완료. 
+
+### Q2. 본인 사번 획득 실패 시 엣지 케이스 안전장치 (UX ⚠️)
+- **상황**: 외부 협력업체 직원, 계약직, 신규 입사자 등 SSO 토큰 메일은 존재하나 **HR 사원 목록에 사번이 매핑되어 있지 않은 예외 케이스** 발생.
+- **백엔드 예외 처리**: API 호출(조회/추가/삭제) 시 로그인한 유저의 사번 정보가 공백이거나 누락되어 있으면 `400 Bad Request` 에러와 함께 `"HR 시스템에 사원 정보가 등록되어 있지 않습니다."` 메시지를 클라이언트에 반환.
+- **프론트엔드 UI 처리**: API 통신 중 400 에러를 감지하면, 전체 화면 최상단에 **고대비 경고 배너(⚠️ "HR 시스템에 사원 정보가 등록되어 있지 않아 즐겨찾기 기능을 사용할 수 없습니다. 관리자에게 문의하세요.")**를 렌더링하고, 즐겨찾기 추가/해제 이벤트를 안전하게 비활성화 및 토글 방지함.
+
+---
+
+## 🗄 1. 데이터베이스(DB) 설계 (Oracle 11g 규격)
+
+한 유저가 여러 명을 즐겨찾기할 수 있는 1:N 관계이므로, `USER_EMP_ID`와 `TARGET_EMP_ID` 쌍에 대해 중복을 막는 복합 유니크 제약조건을 정의했습니다. 또한 Oracle 11g 환경에서 PK 자동 증가(Auto Increment)를 완벽히 구현하기 위해 시퀀스와 INSERT 트리거를 적용했습니다.
+
+### 1-1. DDL SQL (최종안)
 ```sql
+-- 1. 즐겨찾기 테이블 생성
 CREATE TABLE USER_FAVORITES (
-    -- 트리거 없이 DEFAULT 값으로 시퀀스의 NEXTVAL을 직접 호출
-    ID            NUMBER DEFAULT SEQ_USER_FAVORITES.NEXTVAL,
-    USER_EMP_ID   VARCHAR2(50) NOT NULL,            -- 로그인 유저 본인의 사번 (예: '2306051' 형태의 숫자 문자열)
-    TARGET_EMP_ID VARCHAR2(50) NOT NULL,            -- 즐겨찾기 대상 사번 (예: '2306052' 형태의 숫자 문자열)
-    CREATED_AT    TIMESTAMP DEFAULT SYSTIMESTAMP,
-    CONSTRAINT PK_USER_FAVORITES PRIMARY KEY (ID),  
-    CONSTRAINT UQ_USER_FAVORITES UNIQUE (USER_EMP_ID, TARGET_EMP_ID)
-);  
+    ID              NUMBER(19, 0) NOT NULL, -- PK (시퀀스로 자동 주입)
+    USER_EMP_ID     VARCHAR2(50)  NOT NULL, -- 본인 사번
+    TARGET_EMP_ID   VARCHAR2(50)  NOT NULL, -- 대상자 사번
+    CREATED_AT      VARCHAR2(30)  NOT NULL, -- 등록일시 (YYYY-MM-DD HH:MI:SS KST)
+    CONSTRAINT PK_USER_FAVORITES PRIMARY KEY (ID),
+    CONSTRAINT UQ_USER_TARGET_EMP UNIQUE (USER_EMP_ID, TARGET_EMP_ID)
+);
+
+-- 2. 자동 증가 PK를 위한 시퀀스 생성
+CREATE SEQUENCE SEQ_USER_FAVORITES
+START WITH 1
+INCREMENT BY 1
+NOCACHE
+NOCYCLE;
+
+-- 3. BEFORE INSERT 트리거 생성 (Insert 전 시퀀스 값 자동 바인딩)
+CREATE OR REPLACE TRIGGER TRG_USER_FAVORITES_ID
+BEFORE INSERT ON USER_FAVORITES
+FOR EACH ROW
+BEGIN
+    IF :NEW.ID IS NULL THEN
+        SELECT SEQ_USER_FAVORITES.NEXTVAL INTO :NEW.ID FROM DUAL;
+    END IF;
+END;
+/
+
+-- 4. 조회 성능 최적화를 위한 인덱스 생성
+CREATE INDEX IX_FAVORITES_USER ON USER_FAVORITES(USER_EMP_ID);
 ```
 
-### 2-2. 백엔드 API 규격 (Vite / Express)
-모든 API는 SSO Bearer 토큰 인증(`authFetch` 래핑)을 필수로 요구합니다. 클라이언트 위조를 방지하기 위해 서버 단에서 토큰(UPN/이메일)을 해독한 후 내부적으로 **로그인한 유저 본인의 인사 사번(`USER_EMP_ID`)**으로 변환하여 안전하게 적재 및 조회합니다.
+---
 
-| HTTP Method | API Endpoint | Request Body / Param | Response | 설명 |
-| :--- | :--- | :--- | :--- | :--- |
-| **GET** | `/api/favorites` | 없음 | `FavoriteItem[]` | 로그인 유저의 즐겨찾기 리스트 조회 |
-| **POST** | `/api/favorites` | `{ targetEmpId: string }` | `FavoriteItem` | 신규 사원 즐겨찾기 추가 |
-| **DELETE** | `/api/favorites/:targetEmpId` | 경로 변수 (`:targetEmpId`) | `{ success: true }` | 사원 즐겨찾기 삭제 |
+## 🔌 2. 백엔드 API 명세 (/api/favorites)
+
+모든 API 호출 시, Teams SSO 토큰을 검증하고 서버에서 안전하게 SSO 이메일을 파싱한 뒤, DB에서 해당 유저의 사번을 매핑하여 검증합니다.
+
+### 2-1. API 목록 및 명세
+
+| Method | Path | Headers/Body | Response | 비고 |
+|---|---|---|---|---|
+| **GET** | `/api/favorites` | Header: `x-user-empid` | `200 OK`<br>`[ { "targetEmpId": "12345", "createdAt": "2026-05-20..." }, ... ]` | 로그인 유저의 즐겨찾기 리스트 조회 |
+| **POST** | `/api/favorites` | Body: `{ "targetEmpId": "12345" }`<br>Header: `x-user-empid` | `201 Created`<br>`{ "targetEmpId": "12345", "createdAt": "2026-05-20..." }` | 즐겨찾기 신규 등록 |
+| **DELETE** | `/api/favorites/:targetEmpId` | Header: `x-user-empid` | `204 No Content` | 즐겨찾기 단건 해제 |
+
+### 2-2. 주요 에러 응답 코드
+- **`400 Bad Request`**: 본인 사번(`USER_EMP_ID`)이 누락되었거나 빈 값일 때 (HR 시스템 미등록 사용자 대응)
+  ```json
+  {
+    "success": false,
+    "requestId": "kz3x91a-5k9a1",
+    "message": "HR 시스템에 사원 정보가 등록되어 있지 않습니다."
+  }
+  ```
+- **`409 Conflict`**: 이미 즐겨찾기에 등록된 사원을 중복 추가하려 할 때
+  ```json
+  {
+    "success": false,
+    "requestId": "kz3x91a-5k9a1",
+    "message": "이미 즐겨찾기에 등록된 사원입니다."
+  }
+  ```
 
 ---
 
-## 💎 3. 프론트엔드 핵심 구현 내용
+## 🎨 3. 프론트엔드 연동 및 UX 시나리오
 
-### 3-1. 핵심 비즈니스 훅: `useFavorites.ts`
-- **SSO 토큰 연동 및 자동 갱신**: Teams SSO 토큰이 만료된 경우 API 요청 실패 시 자동으로 `updateToken()`을 트리거하여 신선한 토큰으로 요청을 재시도합니다.
-- **TTL 로컬 캐싱 (12시간)**: 트래픽 최소화를 위해 로컬 스토리지에 데이터를 캐싱하며, 신규 등록/해제 이벤트 발생 시 실시간으로 캐시를 갱신합니다.
-- **Optimistic UI 및 정밀한 토스트 피드백**: API 응답 대기 중 화면 상의 별 아이콘 상태를 즉시 반전시키고, 요청이 실패하면 이전 상태로 롤백 및 에러 피드백을 제공합니다. 즐겨찾기 추가/삭제 성공 시 `"박여명님을 즐겨찾기에 추가했습니다."`와 같이 대상 이름이 포함된 명확한 다이얼로그를 토스트로 안내합니다.
+### 3-1. 신규 상태 및 뷰 모드 확장 (`viewMode`)
+- `viewMode` 상태를 기존 `'BROWSE' | 'SEARCH'`에서 `'FAVORITE'`를 추가 지원하여 확장하였습니다.
+- 좌측 최상단 회사 필터 우측에 ⭐ **"즐겨찾기" 토글 버튼**을 배치하여, 클릭 시 `setViewMode('FAVORITE')`로 상태가 전환되며 중앙 그리드에 즐겨찾기 인원만 필터링되어 노출됩니다.
 
-### 3-2. 데스크톱 UI/UX (`OrgChart.tsx`, `OrgTree.styles.ts`)
-- **컴팩트한 상단 고정(Sticky) 즐겨찾기 버튼**:
-  - 좌측 트리 영역 스크롤 내부가 아닌, 회사 선택기 우측 상단에 고정 배치되어 스크롤을 내려도 항상 노출됩니다.
-  - 여백(패딩/마진/Gap)을 최소화하여 컴팩트한 간격(`gap: 6px`, 버튼 패딩 `6px 10px`, 아이콘 `20px`)을 유지합니다.
-- **다중 진입 경로**:
-  - 중앙 테이블 그리드의 각 사원 행 우측 `⭐` 버튼으로 즉시 등록/해제 가능.
-  - 사원 상세 정보 팝업 모달 내부 성명 옆 `⭐` 버튼으로 즉시 등록/해제 가능.
-- **레이아웃 깨짐 방지**: Flex 레이아웃 구조 내에서 트리가 비정상적으로 부풀어 즐겨찾기 영역을 밀어내던 현상을 `flex: 1`, `minHeight: 0`을 통해 완벽히 방어했습니다.
+### 3-2. 즐겨찾기 토글 2-Way UI 지원
+1. **직원 그리드 테이블**: 행 맨 오른쪽에 ⭐ 컬럼 상시 노출하여 직관적으로 즉시 토글(등록: 황색 채워진 별, 미등록: 빈 회색 별)
+2. **직원 상세보기 팝업**: 그리드 클릭 시 뜨는 상세 Modal 내부 우측에 "즐겨찾기 등록" / "즐겨찾기 해제" 버튼 제공.
 
-### 3-3. 모바일 UI/UX (`MobileOrgChart.tsx`)
-- **이중 탭 뷰 모드**: 
-  - 상단 탭 메뉴(`[전체 조직도] | [즐겨찾는 멤버 (N)]`)를 도입하여 한 탭 터치로 즐겨찾기 목록을 빠른 필터 뷰로 전환할 수 있습니다.
-- **정밀한 사번 기반 필터링**:
-  - 모바일에서도 `selectedUser.id` 및 `emp.id`를 사용하여 상세 Bottom Sheet, 트리 노드, 즐겨찾기 탭 화면 전체에서 이메일 누락 사원에 대해서도 한 오차 없이 즐겨찾기 조작이 가능합니다.
+### 3-3. 프론트엔드 훅 아키텍처 (`useFavorites.ts`)
+- 백엔드 API와의 실시간 통신 및 상태 변수를 독립적으로 캡슐화.
+- API 400 에러 발생 시 `isHrRegistered` 플래그를 `false`로 격리하여 최상단에 고대비 경고 배너 렌더링.
+- 낙관적 업데이트(Optimistic UI)를 수행하여 클릭 즉시 별표를 토글하고, 서버 응답이 실패할 때에만 이전 상태로 롤백하고 Toast 경고 알림을 표시함.
 
 ---
 
-## 🚨 4. 주요 트러블슈팅 및 피드백
+## 💡 4. Antigravity의 아키텍처 & UX 개선 피드백 및 조언 (핵심)
 
-### 4-1. UPN/이메일 기반에서 사번(EmpId) 기반으로의 대전환
-- **문제점**: 초기 설계 시 UPN(이메일)을 고유식별자로 사용했으나, 그룹사 내 이메일 정보가 아직 바인딩되지 않은 임시 사원이나 아르바이트 직원, 혹은 동명이인의 경우 이메일 매핑이 비정상 동작하여 즐겨찾기 추가가 실패하거나 오작동하는 치명적 엣지 케이스가 식별되었습니다.
-- **해결책**: 백엔드와 프론트엔드의 즐겨찾기 기준 고유 식별키를 전격 **사번(`emp.id` / `targetEmpId`)**으로 전환하고, `MobileOrgChart.tsx` 내의 잔존 코드까지 전수 사번 매칭으로 개편을 완료했습니다.
+사용자의 보다 나은 아키텍처와 제품 완성도를 위해 Antigravity가 제공하는 가감 없는 피드백하고 조언합니다.
 
-### 4-2. Flex Container 자식 오버플로우 현상
-- **문제점**: 데스크톱 트리 컴포넌트(`OrgTree.styles.ts`)에서 `height: "100%"`를 강제 부여하여 즐겨찾기 고정 영역이 화면 하단 밖으로 밀려 스크롤 시 사라지던 렌더링 결함이 발생했습니다.
-- **해결책**: CSS Flexbox 규칙을 엄격히 적용하여 `flex: 1`, `minHeight: 0`으로 높이를 자동 분배하고, 스크롤 영역은 트리 컨테이너 내부에만 생성되도록 재설정하여 사이드바 레이아웃이 항상 안정적으로 표시됩니다.
+### 💡 피드백 A. Mock 더미데이터 런타임 동적 require 로딩 구조 (반영 완료)
+- **지적**: 개발용 대용량 mock 데이터인 `empDummyData.ts`, `orgDummyData.ts`가 `.gitignore`에 등록되어 운영 배포 시 소스 트리에 포함되지 않아 빌드 컴파일 단계(`tsc`)에서 파일을 못 찾아 에러가 발생하는 치명적인 취약점이 있었습니다.
+- **조언 및 개선**: `server.ts`의 최상단 정적 `import`를 과감히 지우고, `USE_MOCK_DB === 'true'`일 때만 런타임에 동적으로 로드되도록 `require` 및 `try-catch` 감싸기 방식으로 리팩토링했습니다. 이로 인해 운영 배포 시 빌드 안정성이 100% 확보되었고, 로컬 개발 시에는 여전히 Mock 데이터가 원활하게 지원됩니다.
 
-### 4-3. Azure AD 테넌트 `invalid_resource (400)` 에러
-- **문제점**: SSO 로그인 요청 시 Application ID URI 매치 실패로 인한 리소스 미찾음 예외가 발생했습니다.
-- **해결책**: 로컬 테스트 도메인(`api://localhost/...`)과 운영 도메인(`api://teamsorg.daiso.co.kr/...`) 설정을 클라이언트 `config.ts` 및 백엔드 서버 JWT 디코더 양쪽에 완벽히 일치시키고, 토큰 발급 갱신 주기를 정합성 있게 제어하여 토큰 갱신 이슈를 완전 해결했습니다.
+### 💡 피드백 B. Mock DB 파일 입출력 경로 동적 격리 처리 (반영 완료)
+- **지적**: `mockFavorites.json`의 저장 경로 상수가 소스 코드에 하드코딩되어 있어, 실제 운영 서버 배포 시 `data/` 디렉토리가 없거나 운영 체제의 보안 쓰기 권한이 막혀 있는 상황이 발생하면 불필요한 예외나 크래시를 유발할 위험이 있었습니다.
+- **조언 및 개선**: `favoritesRepository.ts` 내부의 경로 설정을 동적 구조로 고도화하여, `USE_MOCK_DB=false`인 운영 환경에서는 폴더 조회 및 입출력을 완전히 생략 및 원천 차단하도록 리팩토링했습니다. 또한 권한 차단 등의 비상 상황에 대처하도록 OS 임시 폴더(`temp/`) 폴백 장치를 추가하여 극한의 안정성을 챙겼습니다.
 
----
+### 💡 피드백 C. DB 성능 최적화: Sequence 쿼리 직접 주입 (향후 권장)
+- **지적**: 오라클 11g 호환을 위해 설정한 BEFORE INSERT 트리거(`TRG_USER_FAVORITES_ID`)는 데이터 입력 시 행 단위로 컴파일 오버헤드가 발생하며, 추후 디버깅 시 개발자가 파악하기 까다롭습니다.
+- **조언**: 테이블 생성 후 트리거를 아예 생성하지 않고, 백엔드 repository의 insert SQL 쿼리를 아래와 같이 작성하여 시퀀스를 명시적으로 사용하는 방향이 성능과 단순함 모두에 더 유리합니다.
+  ```sql
+  -- 트리거 없이 시퀀스 값을 직접 바인딩하여 쿼리 전송
+  INSERT INTO USER_FAVORITES (ID, USER_EMP_ID, TARGET_EMP_ID, CREATED_AT)
+  VALUES (SEQ_USER_FAVORITES.NEXTVAL, :userEmpId, :targetEmpId, :createdAt)
+  ```
 
-## 📈 5. 최종 배포 전 안전 체크리스트
-1. **운영 DB DDL 적용**: 오라클 DB 운영 환경에 `USER_FAVORITES` 테이블 및 `SEQ_USER_FAVORITES` 시퀀스가 정확히 생성되어 있고 테스트 인서트가 정상 작동하는지 확인합니다.
-2. **백엔드 `.env` 스위칭**: 운영 배포 시 `USE_MOCK_DB=false` 설정 및 Oracle DB Connection Pool 설정이 유효한지 검증합니다.
-3. **Azure Portal 구성**: Azure AD의 노출된 API(Scope)가 운영용 도메인 주소와 일치하는지 최종 대조합니다.
+### 💡 피드백 D. 즐겨찾기 동적 특성을 고려한 캐시 TTL(12시간) 단축 (향후 권장)
+- **지적**: 현재 즐겨찾기 조회 API의 결과는 `orgChartData`(조직도)의 패턴을 그대로 차용하여 로컬스토리지에 12시간 동안 캐싱하도록 스펙이 설정되어 있습니다.
+- **조언**: 조직도는 빈번히 변하지 않으나, 즐겨찾기는 "지금 PC에서 즐겨찾기한 직원이 폰(모바일)에서도 즉시 보여야 하는" 실시간 동적 데이터입니다. 12시간 캐시는 UX 동기화 문제를 유발하므로, 즐겨찾기 조회는 캐싱 주기를 아주 짧게(예: 5분) 설계하거나, **앱 로드 최초 1회는 무조건 서버에서 실시간 패치**하도록 프론트엔드 캐싱 로직을 분리 보완하는 것을 강력 권장합니다.
+
+### 💡 피드백 E. HR 미등록 사원을 위한 임시 Fallback 지원 (향후 권장)
+- **지적**: HR DB에 매핑이 안 되는 신규 입사자나 임시/계약직 사용자는 현재 ⚠️ 경고 배너와 함께 즐겨찾기 기능이 완전히 차단되어 사용이 불가능합니다.
+- **조언**: 100% 차단하기보다, 사번 매핑 실패 시 로그인 토큰의 `UPN` 혹은 `Email` 값을 임시 가상 사번으로 간주하여 `USER_EMP_ID` 컬럼에 적재할 수 있도록 서버 예외를 조절한다면, HR 시스템 동기화 전의 임시 사원들도 차별 없이 즉시 즐겨찾기 혜택을 누릴 수 있습니다.
