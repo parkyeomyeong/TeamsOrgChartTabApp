@@ -44,10 +44,13 @@ export default function OrgChart() {
     return me ? me.empId : null;
   }, [currentUserEmail, empList]);
 
-  // HR 매핑 실패 여부 감지 (로그인 이메일은 있으나 사원 목록에 매핑되지 않는 예외 상황)
+  // HR 미등록 여부: 이메일이 사원 목록에 아예 없는 경우만 true
+  // (사번이 null이라도 이메일이 어나이나 업는 미등록으로 반응하지 않음)
   const isHrUnregistered = useMemo(() => {
-    return !!currentUserEmail && empList.length > 0 && !myEmpId;
-  }, [currentUserEmail, empList, myEmpId]);
+    if (!currentUserEmail || !empList.length) return false;
+    const found = empList.some(e => e.email && e.email.toLowerCase() === currentUserEmail.toLowerCase());
+    return !found;
+  }, [currentUserEmail, empList]);
 
   // 8. Toast 상태 (useFavorites가 사용하므로 위로 끌어올림)
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -634,24 +637,7 @@ export default function OrgChart() {
 
   return (
     <FluentProvider theme={webLightTheme} style={{ display: "flex", flexDirection: "column", height: "100vh", backgroundColor: theme.colors.bgMain }}>
-      {isHrUnregistered && (
-        <div style={{
-          backgroundColor: "#fde7e9",
-          color: "#a80000",
-          padding: "10px 20px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: "10px",
-          fontSize: "13px",
-          fontWeight: "bold",
-          borderBottom: "1px solid #f3b6b7",
-          flexShrink: 0
-        }}>
-          <span style={{ fontSize: "15px" }}>⚠️</span>
-          <span>HR 시스템에 본인 사원 정보(이메일 매핑)가 등록되어 있지 않아 즐겨찾기 기능을 사용할 수 없습니다. 인사담당자에게 문의해 주세요.</span>
-        </div>
-      )}
+
       <div
         ref={containerRef}
         style={{
@@ -736,6 +722,36 @@ export default function OrgChart() {
               <Star24Filled color="#FDB913" style={{ width: "20px", height: "20px" }} />
               <span style={{ fontSize: "13px", fontWeight: "600", color: "#242424" }}>
                 즐겨찾는 멤버 ({favorites.length})
+              </span>
+              {/* 오른쪽 끝: 즐겨찾기 사용 가능 상태 표시기 */}
+              <span style={{ marginLeft: "auto" }}>
+                {isHrUnregistered ? (
+                  // HR 미등록: 주황 경고 아이콘 — hover 시 이유 설명
+                  <span
+                    title="HR 시스템에 본인 사원 정보가 등록되어 있지 않아 즐겨찾기를 사용할 수 없습니다. 인사담당자에게 문의해 주세요."
+                    onClick={e => e.stopPropagation()}
+                    style={{
+                      display: "inline-flex", alignItems: "center", justifyContent: "center",
+                      width: "18px", height: "18px", borderRadius: "50%",
+                      backgroundColor: "#FFF4CE", border: "1.5px solid #F7A924",
+                      cursor: "help", fontSize: "11px", fontWeight: "700",
+                      color: "#C47A00", lineHeight: 1, flexShrink: 0,
+                    }}
+                  >
+                    !
+                  </span>
+                ) : (
+                  // 정상: 초록 점
+                  <span
+                    title="모든 기능 정상적으로 사용할 수 있습니다."
+                    onClick={e => e.stopPropagation()}
+                    style={{
+                      display: "inline-block",
+                      width: "8px", height: "8px", borderRadius: "50%",
+                      backgroundColor: "#6BB700", flexShrink: 0,
+                    }}
+                  />
+                )}
               </span>
             </div>
 
