@@ -47,14 +47,16 @@ export const useOrgChartData = (token: string, onTokenRefreshed?: (t: string) =>
 
                 const mappedEmpList: Employee[] = result.empList.map((item: any, index: number) => {
                     const org = orgMap.get(item.orgId);
-                    // email은 사람마다 고유하므로 가장 안전한 key 재료.
-                    // 유저 id가 없거나 "0" 같은 공유 값일 수 있어서 id 우선 믿으면 안 됨.
+                    // id: UI 전용 stable key. email이 고유하므로 email-orgId 조합으로 생성
+                    // empId: DB 저장 전용 사번(EMPLOYEENUMBER). 없으면 null.
                     const stableId = item.email
                         ? `${item.email}-${item.orgId}`
                         : item.id || `no-id-${item.orgId}-${index}`;
+                    const empId = item.id && item.id !== '0' && item.id !== '' ? item.id : null;
                     return {
                         ...item,
                         id: stableId,
+                        empId,
                         position: item.position || '-',
                         role: item.role || '-',
                         department: item.department || '-',

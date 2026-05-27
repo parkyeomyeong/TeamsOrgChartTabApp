@@ -37,11 +37,11 @@ export default function OrgChart() {
   const orgList = data?.orgList || [];
   const empList = data?.empList || [];
 
-  // 로그인한 사용자의 사번 매핑
+  // 로그인한 사용자의 사번 매핑 (emp.empId = DB의 EMPLOYEENUMBER)
   const myEmpId = useMemo(() => {
     if (!currentUserEmail || !empList.length) return null;
     const me = empList.find(e => e.email && e.email.toLowerCase() === currentUserEmail.toLowerCase());
-    return me ? me.id : null;
+    return me ? me.empId : null;
   }, [currentUserEmail, empList]);
 
   // HR 매핑 실패 여부 감지 (로그인 이메일은 있으나 사원 목록에 매핑되지 않는 예외 상황)
@@ -315,7 +315,7 @@ export default function OrgChart() {
   useEffect(() => {
     if (viewMode === 'FAVORITES') {
       const favEmpIds = new Set(favorites.map(f => f.targetEmpId));
-      const filtered = empList.filter(emp => favEmpIds.has(emp.id));
+      const filtered = empList.filter(emp => emp.empId && favEmpIds.has(emp.empId));
       setUsers(filtered);
     }
   }, [favorites, viewMode, empList]);
@@ -708,9 +708,9 @@ export default function OrgChart() {
                 setViewMode('FAVORITES');
                 setSelectedOrgId("");
                 setCurrentOrg(null);
-                // 즐겨찾기 목록 필터링
+                // 즐겨찾기 목록 필터링 (empId 기반)
                 const favEmpIds = new Set(favorites.map(f => f.targetEmpId));
-                const filtered = empList.filter(emp => favEmpIds.has(emp.id));
+                const filtered = empList.filter(emp => emp.empId && favEmpIds.has(emp.empId));
                 setUsers(filtered);
               }}
               style={{
@@ -837,12 +837,12 @@ export default function OrgChart() {
                         <td style={{ ...tdStyle, display: "flex", alignItems: "center", gap: "12px" }}>
                           <div
                             onClick={(e) => {
-                              e.stopPropagation(); // 행 클릭 이벤트(상세팝업) 방지
-                              if (emp.id) {
-                                if (isFavorite(emp.id)) {
-                                  removeFavorite(emp.id, emp.name);
+                              e.stopPropagation();
+                              if (emp.empId) {
+                                if (isFavorite(emp.empId)) {
+                                  removeFavorite(emp.empId, emp.name);
                                 } else {
-                                  addFavorite(emp.id, emp.name);
+                                  addFavorite(emp.empId, emp.name);
                                 }
                               } else {
                                 setToastMessage("사번 정보가 없어 즐겨찾기 등록이 불가능합니다.");
@@ -852,7 +852,7 @@ export default function OrgChart() {
                             onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.2)"}
                             onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}
                           >
-                            {emp.id && isFavorite(emp.id) ? (
+                            {emp.empId && isFavorite(emp.empId) ? (
                               <Star24Filled color="#FDB913" />
                             ) : (
                               <Star24Regular color="#c8c6c4" />
@@ -1017,11 +1017,11 @@ export default function OrgChart() {
                       <div
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (selectedUser.id) {
-                            if (isFavorite(selectedUser.id)) {
-                              removeFavorite(selectedUser.id, selectedUser.name);
+                          if (selectedUser.empId) {
+                            if (isFavorite(selectedUser.empId)) {
+                              removeFavorite(selectedUser.empId, selectedUser.name);
                             } else {
-                              addFavorite(selectedUser.id, selectedUser.name);
+                              addFavorite(selectedUser.empId, selectedUser.name);
                             }
                           } else {
                             setToastMessage("사번 정보가 없어 즐겨찾기 등록이 불가능합니다.");
@@ -1036,9 +1036,9 @@ export default function OrgChart() {
                         }}
                         onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.2)"}
                         onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}
-                        title={selectedUser.id && isFavorite(selectedUser.id) ? "즐겨찾기 해제" : "즐겨찾기 추가"}
+                        title={selectedUser.empId && isFavorite(selectedUser.empId) ? "즐겨찾기 해제" : "즐겨찾기 추가"}
                       >
-                        {selectedUser.id && isFavorite(selectedUser.id) ? (
+                        {selectedUser.empId && isFavorite(selectedUser.empId) ? (
                           <Star24Filled color="#FDB913" />
                         ) : (
                           <Star24Regular color="#c8c6c4" />

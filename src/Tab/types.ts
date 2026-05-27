@@ -1,6 +1,7 @@
 // 직원 데이터 인터페이스
 export interface Employee {
-    id: string; // 고유 ID (User Principal Name 또는 GUID) - 프론트엔드용 매핑
+    id: string;           // UI 전용 stable key (email-orgId 조합) - React key, 체크박스 등 UI 식별용
+    empId: string | null; // DB 사번 (EMPLOYEENUMBER) - 즐겨찾기 등 DB 저장 전용. 사번 없는 사원은 null.
     name: string; // 이름
     position: string; // 직위 (e.g. 과장, 대리)
     role: string; // 직책 (e.g. 팀장)

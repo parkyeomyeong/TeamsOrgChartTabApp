@@ -39,18 +39,25 @@ export default function MobileOrgChart() {
 
     const isLoading = isApiLoading || isAuthLoading;
 
+    // 로그인한 사용자의 사번 매핑 (OrgChart.tsx와 동일한 로직)
+    const myEmpId = useMemo(() => {
+        if (!currentUserEmail || !empList.length) return null;
+        const me = empList.find(e => e.email && e.email.toLowerCase() === currentUserEmail.toLowerCase());
+        return me ? me.empId : null;
+    }, [currentUserEmail, empList]);
+
     // --- 즐겨찾기(Favorites) 훅 연동 ---
     const { favorites, addFavorite, removeFavorite, isFavorite } = useFavorites(
         token,
-        currentUserEmail,
+        myEmpId,
         updateToken,
         setToastMessage
     );
 
-    // [즐겨찾기 전용] 즐겨찾는 멤버 목록 메모 (사번 기반 매칭)
+    // [즐겨찾기 전용] 즐겨찾는 멤버 목록 메모 (empId 기반 매칭)
     const favoriteEmployees = useMemo(() => {
         const favEmpIds = new Set(favorites.map(f => f.targetEmpId));
-        return empList.filter(emp => emp.id && favEmpIds.has(emp.id));
+        return empList.filter(emp => emp.empId && favEmpIds.has(emp.empId));
     }, [favorites, empList]);
 
     // --- 메모 ---
@@ -374,17 +381,21 @@ export default function MobileOrgChart() {
                                         <div
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                if (isFavorite(emp.id)) {
-                                                    removeFavorite(emp.id, emp.name);
+                                                if (emp.empId) {
+                                                    if (isFavorite(emp.empId)) {
+                                                        removeFavorite(emp.empId, emp.name);
+                                                    } else {
+                                                        addFavorite(emp.empId, emp.name);
+                                                    }
                                                 } else {
-                                                    addFavorite(emp.id, emp.name);
+                                                    setToastMessage("사번 정보가 없어 즐겨찾기 등록이 불가능합니다.");
                                                 }
                                             }}
                                             style={{ display: "flex", alignItems: "center", cursor: "pointer", transition: "transform 0.1s" }}
                                             onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.2)"}
                                             onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}
                                         >
-                                            {emp.id && isFavorite(emp.id) ? (
+                                            {emp.empId && isFavorite(emp.empId) ? (
                                                 <Star24Filled color="#FDB913" />
                                             ) : (
                                                 <Star24Regular color="#c8c6c4" />
@@ -523,17 +534,21 @@ export default function MobileOrgChart() {
                                             <div
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    if (isFavorite(selectedUser.id)) {
-                                                        removeFavorite(selectedUser.id, selectedUser.name);
+                                                    if (selectedUser.empId) {
+                                                    if (isFavorite(selectedUser.empId)) {
+                                                        removeFavorite(selectedUser.empId, selectedUser.name);
                                                     } else {
-                                                        addFavorite(selectedUser.id, selectedUser.name);
+                                                        addFavorite(selectedUser.empId, selectedUser.name);
                                                     }
+                                                } else {
+                                                    setToastMessage("사번 정보가 없어 즐겨찾기 등록이 불가능합니다.");
+                                                }
                                                 }}
                                                 style={{ display: "flex", alignItems: "center", cursor: "pointer", transition: "transform 0.1s" }}
                                                 onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.2)"}
                                                 onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}
                                             >
-                                                {selectedUser.id && isFavorite(selectedUser.id) ? (
+                                                {selectedUser.empId && isFavorite(selectedUser.empId) ? (
                                                     <Star24Filled color="#FDB913" />
                                                 ) : (
                                                     <Star24Regular color="#c8c6c4" />
@@ -678,15 +693,17 @@ const MobileTreeNode: React.FC<{
                     <div
                         onClick={(e) => {
                             e.stopPropagation();
-                            if (isFavorite(emp.id)) {
-                                removeFavorite(emp.id, emp.name);
-                            } else {
-                                addFavorite(emp.id, emp.name);
+                            if (emp.empId) {
+                                if (isFavorite(emp.empId)) {
+                                    removeFavorite(emp.empId, emp.name);
+                                } else {
+                                    addFavorite(emp.empId, emp.name);
+                                }
                             }
                         }}
                         style={{ display: "flex", alignItems: "center", cursor: "pointer", transition: "transform 0.1s" }}
                     >
-                        {emp.id && isFavorite(emp.id) ? (
+                        {emp.empId && isFavorite(emp.empId) ? (
                             <Star24Filled color="#FDB913" />
                         ) : (
                             <Star24Regular color="#c8c6c4" />
