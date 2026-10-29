@@ -18,8 +18,40 @@ import { useUserPresence } from "./hooks/useUserPresence"; // Presence Hook
 import { PresenceBadge } from "./components/PresenceBadge"; // Badge Component
 import { useTeamsAuth } from "./hooks/useTeamsAuth";
 // Fluent Icons
-import { Call24Regular, Chat24Regular, Calendar24Regular, Mail24Regular, Star24Filled, Star24Regular } from "@fluentui/react-icons";
+import { Call24Regular, Chat24Regular, Calendar24Regular, Mail24Regular, Star24Filled, Star24Regular, Filter24Regular, Dismiss16Regular } from "@fluentui/react-icons";
 import { useFavorites } from "./hooks/useFavorites";
+
+// ================================================================
+// 임직원 그리드 컬럼 정의
+// - 컬럼을 추가/삭제/순서 변경하려면 이 배열만 고치면 된다. (헤더·본문·필터 전부 이 배열로 그린다)
+// - filterable: true 인 컬럼만 [필터] 버튼에 나타난다. 값 목록은 현재 표시된 목록에서 자동으로 뽑는다.
+// - 이름·내선·휴대전화처럼 사람마다 값이 다른 컬럼은 filterable: false 로 둔다.
+// ================================================================
+interface GridColumn {
+  key: keyof Employee;   // Employee 필드명
+  label: string;         // 헤더 표시명
+  width?: string;        // 열 너비 (colgroup). 없으면 자동
+  filterable: boolean;   // 필터 버튼 대상 여부
+}
+
+const GRID_COLUMNS: GridColumn[] = [
+  { key: "name", label: "이름", width: "22%", filterable: false },
+  { key: "position", label: "직위", width: "12%", filterable: true },
+  { key: "role", label: "직책", width: "12%", filterable: true },
+  { key: "department", label: "부서명", width: "24%", filterable: true },
+  { key: "extension", label: "내선전화", width: "15%", filterable: false },
+  { key: "mobile", label: "휴대전화", width: "15%", filterable: false },
+];
+
+// 필터 값 비교용: 빈 값·"-"는 "(없음)" 하나로 묶는다
+const EMPTY_FILTER_LABEL = "(없음)";
+const toFilterValue = (v: unknown): string => {
+  const s = v == null ? "" : String(v).trim();
+  return s === "" || s === "-" ? EMPTY_FILTER_LABEL : s;
+};
+
+// 컬럼별 선택된 필터 값. { position: ["과장","대리"], department: [...] } 형태. 비어 있으면 그 컬럼은 필터 없음.
+type ColumnFilters = Partial<Record<keyof Employee, string[]>>;
 
 
 /**
@@ -72,8 +104,60 @@ export default function OrgChart() {
   // 1. 중앙 그리드에 표시될 사용자 목록
   const [users, setUsers] = useState<Employee[]>([]);
 
-  // 1.1 현재 표시된 사용자의 이메일 목록 추출 (Presence 조회를 위해)
-  const gridUserEmails = useMemo(() => users.map(u => u.email).filter(Boolean), [users]);
+  // 1.0 컬럼 필터 상태 (부서 선택/검색으로 나온 users 위에 한 겹 더 거르는 용도)
+  //     목록이 바뀌는 동작(부서 선택·검색·회사 변경·즐겨찾기 탭)에서는 초기화하고, 새로고침/탭 복귀 때만 캐시에서 복원한다
+  const [columnFilters, setColumnFilters] = useState<ColumnFilters>({});
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const filterPanelRef = useRef<HTMLDivElement>(null);
+
+  // 필터 후보 값: filterable 컬럼마다 현재 users 에서 중복 제거한 값 목록 (하드코딩 없음)
+  const filterOptions = useMemo(() => {
+    const result = new Map<keyof Employee, string[]>();
+    GRID_COLUMNS.filter(c => c.filterable).forEach(col => {
+      const values = new Set<string>();
+      users.forEach(u => values.add(toFilterValue(u[col.key])));
+      // "(없음)"은 맨 뒤로, 나머지는 가나다순
+      const sorted = Array.from(values).sort((a, b) => {
+        if (a === EMPTY_FILTER_LABEL) return 1;
+        if (b === EMPTY_FILTER_LABEL) return -1;
+        return a.localeCompare(b, "ko");
+      });
+      result.set(col.key, sorted);
+    });
+    return result;
+  }, [users]);
+
+  // 실제로 적용되는 필터: 저장된 값 중 현재 목록에 존재하는 값만 쓴다.
+  // (부서를 옮긴 뒤 캐시에서 복원된 값이 새 목록에 없으면 그 컬럼 필터는 무시 → 0건 사고 방지)
+  const effectiveFilters = useMemo(() => {
+    const result: ColumnFilters = {};
+    (Object.keys(columnFilters) as (keyof Employee)[]).forEach(key => {
+      const options = filterOptions.get(key);
+      const saved = columnFilters[key];
+      if (!options || saved === undefined) return;
+      const selected = saved.filter(v => options.includes(v));
+      if (saved.length === 0) {
+        result[key] = [];                 // 사용자가 전부 해제한 상태 → 0건 표시
+      } else if (selected.length === 0) {
+        return;                           // 저장된 값이 현재 목록에 하나도 없음(오래된 캐시) → 무시
+      } else if (selected.length < options.length) {
+        result[key] = selected;
+      }
+    });
+    return result;
+  }, [columnFilters, filterOptions]);
+
+  const activeFilterCount = Object.keys(effectiveFilters).length;
+
+  // 1.1 그리드에 실제로 그려지는 목록 = users ∩ 컬럼 필터
+  const displayedUsers = useMemo(() => {
+    const keys = Object.keys(effectiveFilters) as (keyof Employee)[];
+    if (keys.length === 0) return users;
+    return users.filter(u => keys.every(key => effectiveFilters[key]!.includes(toFilterValue(u[key]))));
+  }, [users, effectiveFilters]);
+
+  // 1.2 현재 표시된 사용자의 이메일 목록 추출 (Presence 조회를 위해)
+  const gridUserEmails = useMemo(() => displayedUsers.map(u => u.email).filter(Boolean), [displayedUsers]);
 
   // --- 커스텀 훅 (Custom Hooks) ---
   // Presence Hook 사용
@@ -191,6 +275,15 @@ export default function OrgChart() {
           if (savedState.expandedIds) setExpandedIds(new Set(savedState.expandedIds));
           if (savedState.sidebarWidth) setSidebarWidth(savedState.sidebarWidth);
           if (savedState.checkedIds) setCheckedIds(new Set(savedState.checkedIds));
+          // 컬럼 필터 복원 (현재 컬럼 정의에 없는 키는 버림)
+          if (savedState.columnFilters && typeof savedState.columnFilters === "object") {
+            const restoredFilters: ColumnFilters = {};
+            GRID_COLUMNS.filter(c => c.filterable).forEach(col => {
+              const v = savedState.columnFilters[col.key];
+              if (Array.isArray(v) && v.length > 0) restoredFilters[col.key] = v.map(String);
+            });
+            setColumnFilters(restoredFilters);
+          }
 
           // 트리 검색 상태
           if (savedState.treeSearch) {
@@ -336,6 +429,7 @@ export default function OrgChart() {
       expandedIds: Array.from(expandedIds),
       checkedIds: Array.from(checkedIds),
       sidebarWidth,
+      columnFilters,
       search: {
         term: gridSearchTerm,
         category: gridSearchCategory
@@ -353,7 +447,50 @@ export default function OrgChart() {
 
     console.log("캐시 저장됨", stateToSave);
 
-  }, [viewMode, companyCode, selectedOrgId, expandedIds, checkedIds, sidebarWidth, gridSearchTerm, gridSearchCategory, treeSearchTerm, treeSearchCategory, activeTreeSearchTerm, isLoading, data]);
+  }, [viewMode, companyCode, selectedOrgId, expandedIds, checkedIds, sidebarWidth, columnFilters, gridSearchTerm, gridSearchCategory, treeSearchTerm, treeSearchCategory, activeTreeSearchTerm, isLoading, data]);
+
+  // 2-1. 필터 팝오버 바깥 클릭 시 닫기
+  useEffect(() => {
+    if (!isFilterOpen) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (filterPanelRef.current && !filterPanelRef.current.contains(e.target as Node)) {
+        setIsFilterOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [isFilterOpen]);
+
+  // 필터 값 토글 / 컬럼 전체 선택·해제 / 전체 초기화
+  const toggleFilterValue = (key: keyof Employee, value: string) => {
+    setColumnFilters(prev => {
+      const options = filterOptions.get(key) || [];
+      // 키가 없으면 "전체 선택" 상태로 보고 거기서 하나를 빼는 것으로 시작. 빈 배열(전부 해제)이면 거기에 하나를 더한다
+      const current = prev[key] !== undefined ? prev[key]! : options;
+      const next = current.includes(value) ? current.filter(v => v !== value) : [...current, value];
+      const copy = { ...prev };
+      // 전부 선택이면 필터 없는 것과 같으므로 키를 지운다. 전부 해제면 빈 배열(0건 표시)
+      if (next.length === options.length) delete copy[key];
+      else copy[key] = next;
+      return copy;
+    });
+  };
+  const setColumnAll = (key: keyof Employee, selectAll: boolean) => {
+    setColumnFilters(prev => {
+      const copy = { ...prev };
+      if (selectAll) delete copy[key];
+      else copy[key] = [];   // 빈 배열 = 아무것도 선택 안 함 → 0건 표시
+      return copy;
+    });
+  };
+  const clearAllFilters = () => setColumnFilters({});
+
+  // 특정 값이 현재 체크된 상태인지 (선택 없음 = 전체 체크)
+  const isFilterChecked = (key: keyof Employee, value: string) => {
+    const sel = columnFilters[key];
+    if (sel === undefined) return true;
+    return sel.includes(value);
+  };
 
   // 3. 사이드바 리사이징 이벤트 리스너 (Existing Logic)
   const resizeStart = useRef<{ x: number, w: number }>({ x: 0, w: 0 });
@@ -414,6 +551,7 @@ export default function OrgChart() {
   // 5. 왼쪽 트리에서 조직 선택 시 해당 조직의 직원 목록을 가져오며 로딩 스피너 표시
   const handleOrgSelect = (org: OrgData) => {
     setIsProcessing(true);
+    setColumnFilters({}); // 목록이 바뀌므로 컬럼 필터 초기화
 
     setCurrentOrg(org);
     setSelectedOrgId(org.orgId);
@@ -430,6 +568,7 @@ export default function OrgChart() {
   // 회사 변경 핸들러
   const handleCompanyChange = (code: string) => {
     setCompanyCode(code);
+    setColumnFilters({}); // 목록이 바뀌므로 컬럼 필터 초기화
 
     // 회사 변경 시 해당 회사의 루트 노드들을 기본적으로 펼침
     const relevantTree = buildOrgTree(orgList, code === 'ALL' ? undefined : code);
@@ -446,6 +585,7 @@ export default function OrgChart() {
     // 검색 상태 저장
     setGridSearchTerm(term);
     setGridSearchCategory(category);
+    setColumnFilters({}); // 목록이 바뀌므로 컬럼 필터 초기화
 
     if (!term) {
       // 검색어가 비어있으면 탐색 모드로 복귀
@@ -520,16 +660,17 @@ export default function OrgChart() {
     setIsProcessing(false);
   };
 
-  const isAllCheckedGrid = users.length > 0 && users.every(u => checkedIds.has(u.id));
+  // 전체 선택은 화면에 보이는(필터 적용된) 목록 기준
+  const isAllCheckedGrid = displayedUsers.length > 0 && displayedUsers.every(u => checkedIds.has(u.id));
 
   const toggleAllGrid = () => {
     const newSet = new Set(checkedIds);
     if (isAllCheckedGrid) {
       // 이미 현재 목록이 모두 선택된 상태라면 -> 현재 목록만 선택 해제
-      users.forEach(u => newSet.delete(u.id));
+      displayedUsers.forEach(u => newSet.delete(u.id));
     } else {
       // 하나라도 선택 안 된 게 있다면 -> 현재 목록 모두 추가 (기존 선택 유지)
-      users.forEach(u => newSet.add(u.id));
+      displayedUsers.forEach(u => newSet.add(u.id));
     }
     setCheckedIds(newSet);
   };
@@ -694,6 +835,7 @@ export default function OrgChart() {
                 setViewMode('FAVORITES');
                 setSelectedOrgId("");
                 setCurrentOrg(null);
+                setColumnFilters({}); // 목록이 바뀌므로 컬럼 필터 초기화
                 // 즐겨찾기 목록 필터링 (empId 기반)
                 const favEmpIds = new Set(favorites.map(f => f.targetEmpId));
                 const filtered = empList.filter(emp => emp.empId && favEmpIds.has(emp.empId));
@@ -801,23 +943,147 @@ export default function OrgChart() {
 
           {/* 2-1. Center Content (사용자 목록 그리드 영역) - 상단 80% */}
           <div style={{ flex: 4, padding: "10px", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-            <h2 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "15px", color: theme.colors.textMain }}>
-              {viewMode === 'FAVORITES'
-                ? "즐겨찾는 멤버"
-                : (isSearchMode ? "검색 결과" : (currentOrg ? currentOrg.orgName : "전체 조직"))}{" "}
-              <span style={{ color: theme.colors.primary }}>{users.length}</span>
-            </h2>
+            {/* 제목 줄: 왼쪽 제목+건수, 오른쪽 [필터] 버튼 */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "15px", position: "relative" }}>
+              <h2 style={{ fontSize: "18px", fontWeight: "bold", margin: 0, color: theme.colors.textMain }}>
+                {viewMode === 'FAVORITES'
+                  ? "즐겨찾는 멤버"
+                  : (isSearchMode ? "검색 결과" : (currentOrg ? currentOrg.orgName : "전체 조직"))}{" "}
+                <span style={{ color: theme.colors.primary }}>{displayedUsers.length}</span>
+                {activeFilterCount > 0 && (
+                  <span style={{ fontSize: "13px", fontWeight: "normal", color: theme.colors.textSecondary, marginLeft: "6px" }}>
+                    / 전체 {users.length}
+                  </span>
+                )}
+              </h2>
+
+              {/* 필터 버튼 + 팝오버 (filterable 컬럼이 하나도 없으면 버튼 자체를 숨김) */}
+              {GRID_COLUMNS.some(c => c.filterable) && (
+                <div ref={filterPanelRef} style={{ position: "relative" }}>
+                  <button
+                    onClick={() => setIsFilterOpen(o => !o)}
+                    title="컬럼별 값으로 목록 거르기"
+                    style={{
+                      display: "flex", alignItems: "center", gap: "6px",
+                      padding: "6px 12px", fontSize: "13px", fontWeight: "600",
+                      border: `1px solid ${theme.colors.primary}`,
+                      borderRadius: theme.radius.small,
+                      backgroundColor: activeFilterCount > 0 || isFilterOpen ? theme.colors.primaryLight : "white",
+                      color: theme.colors.primary,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Filter24Regular style={{ width: "18px", height: "18px" }} />
+                    필터
+                    {activeFilterCount > 0 && (
+                      <span style={{
+                        minWidth: "18px", height: "18px", padding: "0 5px", borderRadius: "9px",
+                        backgroundColor: theme.colors.primary, color: "white",
+                        fontSize: "11px", display: "inline-flex", alignItems: "center", justifyContent: "center"
+                      }}>
+                        {activeFilterCount}
+                      </span>
+                    )}
+                  </button>
+
+                  {isFilterOpen && (
+                    <div style={{
+                      position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 100,
+                      backgroundColor: theme.colors.bgWhite, border: `1px solid ${theme.colors.border}`,
+                      borderRadius: theme.radius.small, boxShadow: theme.shadow.popup,
+                      display: "flex", flexDirection: "column",
+                      maxWidth: "min(900px, 80vw)",
+                    }}>
+                      {/* 상단 바: 제목 + 초기화 */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", borderBottom: `1px solid ${theme.colors.border}` }}>
+                        <span style={{ fontSize: "13px", fontWeight: "600", color: theme.colors.textMain }}>
+                          필터 {activeFilterCount > 0 && <span style={{ color: theme.colors.primary }}>({activeFilterCount}개 적용 중)</span>}
+                        </span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                          {/* 초기화: 모든 컬럼 필터 해제 (창은 닫지 않음) */}
+                          <button
+                            onClick={clearAllFilters}
+                            disabled={Object.keys(columnFilters).length === 0}
+                            style={Object.keys(columnFilters).length === 0
+                              ? { border: `1px solid ${theme.colors.border}`, background: "white", color: theme.colors.textDisabled, cursor: "default", padding: "3px 10px", fontSize: "12px", fontWeight: "600", borderRadius: theme.radius.small }
+                              : { border: `1px solid ${theme.colors.primary}`, background: "white", color: theme.colors.primary, cursor: "pointer", padding: "3px 10px", fontSize: "12px", fontWeight: "600", borderRadius: theme.radius.small }}
+                          >
+                            초기화
+                          </button>
+                          {/* 닫기: 창만 닫음 (필터는 유지) */}
+                          <button
+                            onClick={() => setIsFilterOpen(false)}
+                            title="닫기"
+                            style={{ border: "none", background: "none", padding: "2px", display: "flex", alignItems: "center", color: theme.colors.textSecondary, cursor: "pointer" }}
+                          >
+                            <Dismiss16Regular />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 컬럼별 값 목록 */}
+                      <div style={{ display: "flex", padding: "8px 4px" }}>
+                        {GRID_COLUMNS.filter(c => c.filterable).map((col, idx) => {
+                          const options = filterOptions.get(col.key) || [];
+                          const checkedCount = options.filter(v => isFilterChecked(col.key, v)).length;
+                          const allChecked = options.length > 0 && checkedCount === options.length;
+                          return (
+                            <div key={col.key} style={{ width: "220px", display: "flex", flexDirection: "column", padding: "0 8px", borderLeft: idx === 0 ? "none" : `1px solid ${theme.colors.border}` }}>
+                              {/* 컬럼 머리: 전체 체크박스 + 컬럼명 + (선택/전체) */}
+                              <label style={{ display: "flex", alignItems: "center", gap: "6px", padding: "4px", marginBottom: "4px", borderBottom: `1px solid ${theme.colors.border}`, cursor: "pointer", flexShrink: 0 }}>
+                                <TriStateCheckbox
+                                  checked={allChecked}
+                                  indeterminate={checkedCount > 0 && !allChecked}
+                                  onChange={() => setColumnAll(col.key, !allChecked)}
+                                />
+                                <span style={{ fontSize: "13px", fontWeight: "600", color: theme.colors.textMain }}>{col.label}</span>
+                                <span style={{ fontSize: "12px", color: theme.colors.textSecondary }}>({checkedCount}/{options.length})</span>
+                              </label>
+                              {/* 값 목록 (항목이 많아도 눌리지 않도록 flexShrink 0 + 스크롤) */}
+                              <div style={{ overflowY: "auto", maxHeight: "300px" }}>
+                                {options.length === 0 && (
+                                  <div style={{ fontSize: "12px", color: theme.colors.textDisabled, padding: "4px" }}>표시할 값이 없습니다</div>
+                                )}
+                                {options.map(v => (
+                                  <label key={v} title={v} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", lineHeight: "20px", padding: "3px 4px", borderRadius: "3px", cursor: "pointer", flexShrink: 0 }}
+                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.colors.bgHover}
+                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isFilterChecked(col.key, v)}
+                                      onChange={() => toggleFilterValue(col.key, v)}
+                                      style={{ cursor: "pointer", accentColor: theme.colors.primary, flexShrink: 0, margin: 0 }}
+                                    />
+                                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, color: v === EMPTY_FILTER_LABEL ? theme.colors.textDisabled : theme.colors.textMain }}>{v}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
 
             <div style={{ backgroundColor: theme.colors.bgWhite, boxShadow: theme.shadow.default, borderRadius: theme.radius.small, overflow: "hidden", display: "flex", flexDirection: "column", flex: 1, position: "relative" }}>
               {/* 로딩 스피너 */}
               {isLoading && <Spinner />}
 
-              <div style={{ flex: 1, overflowY: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <div style={{ flex: 1, overflowY: "auto", position: "relative" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+                  {/* 열 너비를 헤더·본문이 같이 쓰도록 colgroup으로 고정 */}
+                  <colgroup>
+                    <col style={{ width: "48px" }} />
+                    {GRID_COLUMNS.map(col => <col key={col.key} style={{ width: col.width }} />)}
+                  </colgroup>
                   <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
-                    <tr style={{ borderBottom: "1px solid #edebe9", backgroundColor: "#f3f2f1", textAlign: "left" }}>
-                      <th style={{ ...thStyle, width: "40px", textAlign: "center", verticalAlign: "middle" }}>
+                    <tr style={{ backgroundColor: "#f3f2f1" }}>
+                      <th style={{ ...thStyle, textAlign: "center" }}>
                         <input
                           type="checkbox"
                           checked={isAllCheckedGrid}
@@ -825,16 +1091,18 @@ export default function OrgChart() {
                           style={{ cursor: "pointer", transform: "scale(1.5)", margin: "0" }}
                         />
                       </th>
-                      <th style={thStyle}>이름</th>
-                      <th style={thStyle}>직위</th>
-                      <th style={thStyle}>직책</th>
-                      <th style={thStyle}>부서명</th>
-                      <th style={thStyle}>내선전화</th>
-                      <th style={thStyle}>휴대전화</th>
+                      {GRID_COLUMNS.map((col, idx) => (
+                        <th key={col.key} style={{ ...thStyle, ...(idx === GRID_COLUMNS.length - 1 ? { borderRight: "none" } : {}) }}>
+                          {col.label}
+                          {effectiveFilters[col.key] !== undefined && (
+                            <Filter24Regular style={{ width: "14px", height: "14px", marginLeft: "4px", verticalAlign: "-2px", color: theme.colors.primary }} />
+                          )}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {users.map((emp) => (
+                    {displayedUsers.map((emp) => (
                       <tr
                         key={emp.id}
                         onClick={() => handleRowClick(emp)}
@@ -842,7 +1110,7 @@ export default function OrgChart() {
                         onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#faf9f8"}
                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "white"}
                       >
-                        <td style={{ textAlign: "center", padding: "10px", verticalAlign: "middle" }} onClick={(e) => e.stopPropagation()}>
+                        <td style={{ ...tdStyle, textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
                           <input
                             type="checkbox"
                             checked={isCheckedGrid(emp.id)}
@@ -850,43 +1118,59 @@ export default function OrgChart() {
                             style={{ cursor: "pointer", transform: "scale(1.5)", margin: "0" }}
                           />
                         </td>
-                        <td style={{ ...tdStyle, display: "flex", alignItems: "center", gap: "12px" }}>
-                          <div
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (emp.empId) {
-                                if (isFavorite(emp.empId)) {
-                                  removeFavorite(emp.empId, emp.name);
-                                } else {
-                                  addFavorite(emp.empId, emp.name);
-                                }
-                              } else {
-                                setToastMessage("사번 정보가 없어 즐겨찾기 등록이 불가능합니다.");
-                              }
-                            }}
-                            style={{ display: "flex", alignItems: "center", cursor: "pointer", transition: "transform 0.1s" }}
-                            onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.2)"}
-                            onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}
-                          >
-                            {emp.empId && isFavorite(emp.empId) ? (
-                              <Star24Filled color="#FDB913" />
+                        {GRID_COLUMNS.map(col => (
+                          <td key={col.key} style={tdStyle} title={col.key === "name" ? undefined : String(emp[col.key] ?? "")}>
+                            {col.key === "name" ? (
+                              // 이름 칸: 별 + 아바타 + 이름. (td 자체에 flex를 주면 테이블 셀이 깨져서 안쪽 div에 준다)
+                              <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
+                                <div
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (emp.empId) {
+                                      if (isFavorite(emp.empId)) {
+                                        removeFavorite(emp.empId, emp.name);
+                                      } else {
+                                        addFavorite(emp.empId, emp.name);
+                                      }
+                                    } else {
+                                      setToastMessage("사번 정보가 없어 즐겨찾기 등록이 불가능합니다.");
+                                    }
+                                  }}
+                                  style={{ display: "flex", alignItems: "center", cursor: "pointer", transition: "transform 0.1s", flexShrink: 0 }}
+                                  onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.2)"}
+                                  onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}
+                                >
+                                  {emp.empId && isFavorite(emp.empId) ? (
+                                    <Star24Filled color="#FDB913" />
+                                  ) : (
+                                    <Star24Regular color="#c8c6c4" />
+                                  )}
+                                </div>
+                                <AvatarWithStatus name={emp.name} photoUrl={getPhotoUrl(emp.email)} status={presenceMap[emp.email]} size={32} />
+                                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={emp.name}>{emp.name}</span>
+                              </div>
                             ) : (
-                              <Star24Regular color="#c8c6c4" />
+                              emp[col.key]
                             )}
-                          </div>
-                          <AvatarWithStatus name={emp.name} photoUrl={getPhotoUrl(emp.email)} status={presenceMap[emp.email]} size={32} />
-                          {emp.name}
-                        </td>
-
-                        <td style={tdStyle}>{emp.position}</td>
-                        <td style={tdStyle}>{emp.role}</td>
-                        <td style={tdStyle}>{emp.department}</td>
-                        <td style={tdStyle}>{emp.extension}</td>
-                        <td style={tdStyle}>{emp.mobile}</td>
+                          </td>
+                        ))}
                       </tr>
                     ))}
                   </tbody>
                 </table>
+
+                {/* 빈 결과 안내: 검색 결과 없음 / 필터 결과 없음 */}
+                {!isLoading && displayedUsers.length === 0 && (isSearchMode || activeFilterCount > 0) && (
+                  <div style={{
+                    position: "absolute", top: "44px", left: 0, right: 0, bottom: 0,
+                    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                    gap: "10px", color: theme.colors.textSecondary, pointerEvents: "none",
+                  }}>
+                    <div style={{ fontSize: "28px", fontWeight: "700", color: theme.colors.textDisabled, letterSpacing: "1px" }}>
+                      {users.length === 0 ? "검색 결과 없음" : "필터 조건에 맞는 임직원 없음"}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1123,8 +1407,18 @@ export default function OrgChart() {
 
 // --- 하위 스타일 컴포넌트 및 상수 ---
 
-const thStyle: CSSProperties = { padding: "10px", fontWeight: "600", color: theme.colors.textMain, fontSize: "13px", borderBottom: `1px solid ${theme.colors.border}`, textAlign: "center" };
-const tdStyle: CSSProperties = { padding: "10px", color: "#201f1e", fontSize: "14px" };
+// 헤더·본문 정렬 통일: 둘 다 왼쪽 정렬 + 같은 padding. 헤더는 열 사이에 세로 경계선.
+const thStyle: CSSProperties = {
+  padding: "10px 12px", fontWeight: "600", color: theme.colors.textMain, fontSize: "13px",
+  textAlign: "left", verticalAlign: "middle", whiteSpace: "nowrap",
+  borderBottom: `1px solid ${theme.colors.border}`,
+  borderRight: `1px solid #e1dfdd`,
+};
+const tdStyle: CSSProperties = {
+  padding: "10px 12px", color: "#201f1e", fontSize: "14px",
+  textAlign: "left", verticalAlign: "middle",
+  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+};
 const overlayStyle: CSSProperties = {
   position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
   backgroundColor: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000
@@ -1136,6 +1430,21 @@ const popupStyle: CSSProperties = {
 const closeBtnStyle: CSSProperties = {
   position: "absolute", top: "15px", right: "15px", background: "none", border: "none",
   fontSize: "20px", cursor: "pointer", color: theme.colors.textSecondary
+};
+
+// 전체/일부/없음 3상태 체크박스 (필터 컬럼 머리용). indeterminate는 속성이 아니라 DOM 프로퍼티라 ref로 넣는다
+const TriStateCheckbox = ({ checked, indeterminate, onChange }: { checked: boolean, indeterminate: boolean, onChange: () => void }) => {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (ref.current) ref.current.indeterminate = indeterminate; }, [indeterminate]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={checked}
+      onChange={onChange}
+      style={{ cursor: "pointer", accentColor: theme.colors.primary, flexShrink: 0, margin: 0 }}
+    />
+  );
 };
 
 // [Styles] Fluent Icons 에서 사용

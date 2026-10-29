@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { app, authentication } from "@microsoft/teams-js";
+import { IS_MOCK, MOCK_USER_EMAIL } from "../config";
 
 /**
  * useTeamsAuth Hook
@@ -12,6 +13,16 @@ export const useTeamsAuth = () => {
     const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true); // 인증 로딩 상태 추가
 
     useEffect(() => {
+        // [로컬 Mock 모드] Teams 밖(일반 브라우저)에서는 SSO를 받을 수 없으므로
+        // 이메일 평문을 토큰 자리에 넣는다. 백엔드(USE_MOCK_DB=true)의 MOCK_BYPASS가 이걸 받아 통과시킨다.
+        if (IS_MOCK) {
+            if (!MOCK_USER_EMAIL) console.error("[Mock] .env에 VITE_MOCK_USER_EMAIL 이 없습니다.");
+            setToken(MOCK_USER_EMAIL);
+            setCurrentUserEmail(MOCK_USER_EMAIL);
+            setIsAuthLoading(false);
+            return;
+        }
+
         const getAuthToken = async () => {
             try {
                 // 0. Teams 앱 초기화 보장 (필수)

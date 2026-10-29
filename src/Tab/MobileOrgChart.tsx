@@ -423,6 +423,11 @@ export default function MobileOrgChart() {
                                 ))
                             )}
                         </div>
+                    ) : activeSearchTerm && matchedOrgIds && matchedOrgIds.size === 0 ? (
+                        // 검색했는데 맞는 사람이 한 명도 없을 때: 빈 트리 대신 안내 문구
+                        <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px", padding: "40px 20px", color: theme.colors.textSecondary }}>
+                            <div style={{ fontSize: "24px", fontWeight: "700", color: theme.colors.textDisabled, letterSpacing: "1px" }}>검색 결과 없음</div>
+                        </div>
                     ) : (
                         treeData.map(node => (
                             <MobileTreeNode
