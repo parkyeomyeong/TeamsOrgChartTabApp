@@ -32,13 +32,18 @@ interface GridColumn {
   label: string;         // 헤더 표시명
   width?: string;        // 열 너비 (colgroup). 없으면 자동
   filterable: boolean;   // 필터 버튼 대상 여부
+  filterLabel?: string;  // 필터 창에서 쓸 이름 (없으면 label)
+  // 필터 값 종류
+  //  - "values"(기본): 셀 값 그대로 중복 제거해서 나열
+  //  - "orgTree": 조직 트리. 값은 orgId이고 상위 조직을 고르면 그 아래 조직 전부가 같이 선택된다
+  filterMode?: "values" | "orgTree";
 }
 
 const GRID_COLUMNS: GridColumn[] = [
   { key: "name", label: "이름", width: "22%", filterable: false },
   { key: "position", label: "직위", width: "12%", filterable: true },
   { key: "role", label: "직책", width: "12%", filterable: true },
-  { key: "department", label: "부서명", width: "24%", filterable: true },
+  { key: "department", label: "부서명", width: "24%", filterable: true, filterLabel: "부서/팀명", filterMode: "orgTree" },
   { key: "extension", label: "내선전화", width: "15%", filterable: false },
   { key: "mobile", label: "휴대전화", width: "15%", filterable: false },
 ];
@@ -50,7 +55,20 @@ const toFilterValue = (v: unknown): string => {
   return s === "" || s === "-" ? EMPTY_FILTER_LABEL : s;
 };
 
-// 컬럼별 선택된 필터 값. { position: ["과장","대리"], department: [...] } 형태. 비어 있으면 그 컬럼은 필터 없음.
+// 직원 한 명이 어떤 컬럼에서 갖는 필터 값 (orgTree 컬럼은 orgId, 나머지는 셀 값)
+const filterValueOf = (emp: Employee, col: GridColumn): string =>
+  col.filterMode === "orgTree" ? emp.orgId : toFilterValue(emp[col.key]);
+
+// 필터 창에 나열되는 항목 하나
+interface FilterOption {
+  value: string;     // 선택 값 (orgTree면 orgId)
+  label: string;     // 표시명
+  depth: number;     // orgTree 들여쓰기 단계. values 모드는 0
+  count: number;     // 현재 목록에서 이 값(orgTree면 하위 포함)에 해당하는 인원
+  subtree: string[]; // 이 항목을 체크/해제할 때 같이 바뀌는 값들 (자기 자신 포함). values 모드는 [value]
+}
+
+// 컬럼별 선택된 필터 값. { position: ["과장","대리"], department: ["14636", ...] } 형태. 키가 없으면 그 컬럼은 필터 없음.
 type ColumnFilters = Partial<Record<keyof Employee, string[]>>;
 
 
@@ -103,66 +121,6 @@ export default function OrgChart() {
 
   // 1. 중앙 그리드에 표시될 사용자 목록
   const [users, setUsers] = useState<Employee[]>([]);
-
-  // 1.0 컬럼 필터 상태 (부서 선택/검색으로 나온 users 위에 한 겹 더 거르는 용도)
-  //     목록이 바뀌는 동작(부서 선택·검색·회사 변경·즐겨찾기 탭)에서는 초기화하고, 새로고침/탭 복귀 때만 캐시에서 복원한다
-  const [columnFilters, setColumnFilters] = useState<ColumnFilters>({});
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const filterPanelRef = useRef<HTMLDivElement>(null);
-
-  // 필터 후보 값: filterable 컬럼마다 현재 users 에서 중복 제거한 값 목록 (하드코딩 없음)
-  const filterOptions = useMemo(() => {
-    const result = new Map<keyof Employee, string[]>();
-    GRID_COLUMNS.filter(c => c.filterable).forEach(col => {
-      const values = new Set<string>();
-      users.forEach(u => values.add(toFilterValue(u[col.key])));
-      // "(없음)"은 맨 뒤로, 나머지는 가나다순
-      const sorted = Array.from(values).sort((a, b) => {
-        if (a === EMPTY_FILTER_LABEL) return 1;
-        if (b === EMPTY_FILTER_LABEL) return -1;
-        return a.localeCompare(b, "ko");
-      });
-      result.set(col.key, sorted);
-    });
-    return result;
-  }, [users]);
-
-  // 실제로 적용되는 필터: 저장된 값 중 현재 목록에 존재하는 값만 쓴다.
-  // (부서를 옮긴 뒤 캐시에서 복원된 값이 새 목록에 없으면 그 컬럼 필터는 무시 → 0건 사고 방지)
-  const effectiveFilters = useMemo(() => {
-    const result: ColumnFilters = {};
-    (Object.keys(columnFilters) as (keyof Employee)[]).forEach(key => {
-      const options = filterOptions.get(key);
-      const saved = columnFilters[key];
-      if (!options || saved === undefined) return;
-      const selected = saved.filter(v => options.includes(v));
-      if (saved.length === 0) {
-        result[key] = [];                 // 사용자가 전부 해제한 상태 → 0건 표시
-      } else if (selected.length === 0) {
-        return;                           // 저장된 값이 현재 목록에 하나도 없음(오래된 캐시) → 무시
-      } else if (selected.length < options.length) {
-        result[key] = selected;
-      }
-    });
-    return result;
-  }, [columnFilters, filterOptions]);
-
-  const activeFilterCount = Object.keys(effectiveFilters).length;
-
-  // 1.1 그리드에 실제로 그려지는 목록 = users ∩ 컬럼 필터
-  const displayedUsers = useMemo(() => {
-    const keys = Object.keys(effectiveFilters) as (keyof Employee)[];
-    if (keys.length === 0) return users;
-    return users.filter(u => keys.every(key => effectiveFilters[key]!.includes(toFilterValue(u[key]))));
-  }, [users, effectiveFilters]);
-
-  // 1.2 현재 표시된 사용자의 이메일 목록 추출 (Presence 조회를 위해)
-  const gridUserEmails = useMemo(() => displayedUsers.map(u => u.email).filter(Boolean), [displayedUsers]);
-
-  // --- 커스텀 훅 (Custom Hooks) ---
-  // Presence Hook 사용
-  const { presenceMap } = useUserPresence(gridUserEmails, token, false, updateToken); // gridUserEmails가 바뀌면 useUserPresence가 호출됨
-  const getPhotoUrl = (email: string) => email ? `${API_BASE_URL}/api/users/photo/${encodeURIComponent(email)}` : undefined;
 
   // 2. 팝업(상세 정보)에 표시할 선택된 사용자
   const [selectedUser, setSelectedUser] = useState<Employee | null>(null);
@@ -221,6 +179,107 @@ export default function OrgChart() {
   const orgMap = useMemo(() => {
     return new Map(orgList.map(org => [org.orgId, org]));
   }, [orgList]); // orgList 변경 시 재계산
+
+  // 1.0 컬럼 필터 상태 (부서 선택/검색으로 나온 users 위에 한 겹 더 거르는 용도)
+  //     목록이 바뀌는 동작(부서 선택·검색·회사 변경·즐겨찾기 탭)에서는 초기화하고, 새로고침/탭 복귀 때만 캐시에서 복원한다
+  const [columnFilters, setColumnFilters] = useState<ColumnFilters>({});
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [filterSearch, setFilterSearch] = useState<Partial<Record<keyof Employee, string>>>({}); // 컬럼별 값 검색어
+  const filterPanelRef = useRef<HTMLDivElement>(null);
+
+  // 필터 후보 값: filterable 컬럼마다 현재 users 에서 뽑는다 (하드코딩 없음)
+  //  - values : 중복 제거한 셀 값, 가나다순, "(없음)"은 맨 뒤
+  //  - orgTree: 현재 목록 사람들의 소속 조직 + 그 상위 조직 전부. 트리 순서대로, 들여쓰기 포함
+  const filterOptions = useMemo(() => {
+    const result = new Map<keyof Employee, FilterOption[]>();
+    GRID_COLUMNS.filter(c => c.filterable).forEach(col => {
+      if (col.filterMode === "orgTree") {
+        // 1) 현재 목록에 등장하는 orgId와 그 조상 전부 수집
+        const relevant = new Set<string>();
+        const directCount = new Map<string, number>();
+        users.forEach(u => {
+          directCount.set(u.orgId, (directCount.get(u.orgId) || 0) + 1);
+          let cur: string | undefined = u.orgId;
+          while (cur && !relevant.has(cur)) {
+            relevant.add(cur);
+            cur = orgMap.get(cur)?.parentId || undefined;
+          }
+        });
+        // 2) 트리를 깊이 우선으로 돌며 relevant 한 노드만 순서대로 나열
+        const options: FilterOption[] = [];
+        const walk = (nodes: OrgTreeNode[], depth: number): string[] => {
+          const collected: string[] = [];
+          nodes.forEach(node => {
+            if (!relevant.has(node.orgId)) return;
+            const idx = options.length;
+            options.push({ value: node.orgId, label: node.orgName, depth, count: 0, subtree: [] });
+            const below = walk(node.children, depth + 1);
+            const subtree = [node.orgId, ...below];
+            let count = directCount.get(node.orgId) || 0;
+            below.forEach(id => { count += directCount.get(id) || 0; });
+            options[idx].subtree = subtree;
+            options[idx].count = count;
+            collected.push(...subtree);
+          });
+          return collected;
+        };
+        walk(treeData, 0);
+        result.set(col.key, options);
+      } else {
+        const counts = new Map<string, number>();
+        users.forEach(u => { const v = toFilterValue(u[col.key]); counts.set(v, (counts.get(v) || 0) + 1); });
+        const sorted = Array.from(counts.keys()).sort((a, b) => {
+          if (a === EMPTY_FILTER_LABEL) return 1;
+          if (b === EMPTY_FILTER_LABEL) return -1;
+          return a.localeCompare(b, "ko");
+        });
+        result.set(col.key, sorted.map(v => ({ value: v, label: v, depth: 0, count: counts.get(v) || 0, subtree: [v] })));
+      }
+    });
+    return result;
+  }, [users, orgMap, treeData]);
+
+  // 실제로 적용되는 필터: 저장된 값 중 현재 목록에 존재하는 값만 쓴다.
+  // (부서를 옮긴 뒤 캐시에서 복원된 값이 새 목록에 없으면 그 컬럼 필터는 무시 → 0건 사고 방지)
+  const effectiveFilters = useMemo(() => {
+    const result: ColumnFilters = {};
+    (Object.keys(columnFilters) as (keyof Employee)[]).forEach(key => {
+      const options = filterOptions.get(key);
+      const saved = columnFilters[key];
+      if (!options || saved === undefined) return;
+      const valid = new Set(options.map(o => o.value));
+      const selected = saved.filter(v => valid.has(v));
+      if (saved.length === 0) {
+        result[key] = [];                 // 사용자가 전부 해제한 상태 → 0건 표시
+      } else if (selected.length === 0) {
+        return;                           // 저장된 값이 현재 목록에 하나도 없음(오래된 캐시) → 무시
+      } else if (selected.length < options.length) {
+        result[key] = selected;
+      }
+    });
+    return result;
+  }, [columnFilters, filterOptions]);
+
+  const activeFilterCount = Object.keys(effectiveFilters).length;
+
+  // 1.1 그리드에 실제로 그려지는 목록 = users ∩ 컬럼 필터
+  //     orgTree 컬럼은 사람의 소속 orgId가 선택 목록에 있으면 통과 (상위 조직 체크 시 하위 orgId가 전부 선택 목록에 들어감)
+  const displayedUsers = useMemo(() => {
+    const keys = Object.keys(effectiveFilters) as (keyof Employee)[];
+    if (keys.length === 0) return users;
+    const cols = keys.map(k => GRID_COLUMNS.find(c => c.key === k)!);
+    const sets = cols.map(c => new Set(effectiveFilters[c.key]!));
+    return users.filter(u => cols.every((c, i) => sets[i].has(filterValueOf(u, c))));
+  }, [users, effectiveFilters]);
+
+  // 1.2 현재 표시된 사용자의 이메일 목록 추출 (Presence 조회를 위해)
+  const gridUserEmails = useMemo(() => displayedUsers.map(u => u.email).filter(Boolean), [displayedUsers]);
+
+  // --- 커스텀 훅 (Custom Hooks) ---
+  // Presence Hook 사용
+  const { presenceMap } = useUserPresence(gridUserEmails, token, false, updateToken); // gridUserEmails가 바뀌면 useUserPresence가 호출됨
+  const getPhotoUrl = (email: string) => email ? `${API_BASE_URL}/api/users/photo/${encodeURIComponent(email)}` : undefined;
+
 
   // 부서별 인원수 계산 (Bottom-up Recursive Aggregation)
   const memberCountMapForOrgTree = useMemo(() => {
@@ -461,36 +520,44 @@ export default function OrgChart() {
     return () => document.removeEventListener("mousedown", onMouseDown);
   }, [isFilterOpen]);
 
-  // 필터 값 토글 / 컬럼 전체 선택·해제 / 전체 초기화
-  const toggleFilterValue = (key: keyof Employee, value: string) => {
+  // 필터 선택 상태 계산 (선택 없음 = 전체 체크)
+  const selectedSetOf = (key: keyof Employee): Set<string> => {
+    const sel = columnFilters[key];
+    if (sel === undefined) return new Set((filterOptions.get(key) || []).map(o => o.value));
+    return new Set(sel);
+  };
+  // 항목 체크 상태: 자기 subtree가 전부 선택이면 checked, 일부면 indeterminate
+  const optionState = (key: keyof Employee, opt: FilterOption): "all" | "some" | "none" => {
+    const sel = selectedSetOf(key);
+    const n = opt.subtree.filter(v => sel.has(v)).length;
+    return n === 0 ? "none" : n === opt.subtree.length ? "all" : "some";
+  };
+
+  // 선택 집합을 저장 형태로 정리: 전부 선택이면 키 제거(필터 없음), 아니면 배열
+  const commitSelection = (key: keyof Employee, next: Set<string>) => {
     setColumnFilters(prev => {
-      const options = filterOptions.get(key) || [];
-      // 키가 없으면 "전체 선택" 상태로 보고 거기서 하나를 빼는 것으로 시작. 빈 배열(전부 해제)이면 거기에 하나를 더한다
-      const current = prev[key] !== undefined ? prev[key]! : options;
-      const next = current.includes(value) ? current.filter(v => v !== value) : [...current, value];
       const copy = { ...prev };
-      // 전부 선택이면 필터 없는 것과 같으므로 키를 지운다. 전부 해제면 빈 배열(0건 표시)
-      if (next.length === options.length) delete copy[key];
-      else copy[key] = next;
+      const total = (filterOptions.get(key) || []).length;
+      if (next.size >= total) delete copy[key];
+      else copy[key] = Array.from(next);
       return copy;
     });
   };
-  const setColumnAll = (key: keyof Employee, selectAll: boolean) => {
-    setColumnFilters(prev => {
-      const copy = { ...prev };
-      if (selectAll) delete copy[key];
-      else copy[key] = [];   // 빈 배열 = 아무것도 선택 안 함 → 0건 표시
-      return copy;
-    });
+
+  // 항목 토글: 전부 선택돼 있으면 subtree 해제, 아니면 subtree 선택 (orgTree는 하위 조직까지 같이)
+  const toggleFilterOption = (key: keyof Employee, opt: FilterOption) => {
+    const next = selectedSetOf(key);
+    if (optionState(key, opt) === "all") opt.subtree.forEach(v => next.delete(v));
+    else opt.subtree.forEach(v => next.add(v));
+    commitSelection(key, next);
+  };
+  // 컬럼 머리 체크박스: 검색 중이면 보이는 항목만, 아니면 전체
+  const setColumnAll = (key: keyof Employee, selectAll: boolean, targets: FilterOption[]) => {
+    const next = selectedSetOf(key);
+    targets.forEach(o => o.subtree.forEach(v => selectAll ? next.add(v) : next.delete(v)));
+    commitSelection(key, next);
   };
   const clearAllFilters = () => setColumnFilters({});
-
-  // 특정 값이 현재 체크된 상태인지 (선택 없음 = 전체 체크)
-  const isFilterChecked = (key: keyof Employee, value: string) => {
-    const sel = columnFilters[key];
-    if (sel === undefined) return true;
-    return sel.includes(value);
-  };
 
   // 3. 사이드바 리사이징 이벤트 리스너 (Existing Logic)
   const resizeStart = useRef<{ x: number, w: number }>({ x: 0, w: 0 });
@@ -961,7 +1028,7 @@ export default function OrgChart() {
               {GRID_COLUMNS.some(c => c.filterable) && (
                 <div ref={filterPanelRef} style={{ position: "relative" }}>
                   <button
-                    onClick={() => setIsFilterOpen(o => !o)}
+                    onClick={() => { setIsFilterOpen(o => !o); setFilterSearch({}); }}
                     title="컬럼별 값으로 목록 거르기"
                     style={{
                       display: "flex", alignItems: "center", gap: "6px",
@@ -1025,39 +1092,50 @@ export default function OrgChart() {
                       <div style={{ display: "flex", padding: "8px 4px" }}>
                         {GRID_COLUMNS.filter(c => c.filterable).map((col, idx) => {
                           const options = filterOptions.get(col.key) || [];
-                          const checkedCount = options.filter(v => isFilterChecked(col.key, v)).length;
-                          const allChecked = options.length > 0 && checkedCount === options.length;
+                          const term = (filterSearch[col.key] || "").trim().toLowerCase();
+                          const visible = term ? options.filter(o => o.label.toLowerCase().includes(term)) : options;
+                          const sel = selectedSetOf(col.key);
+                          const checkedCount = options.filter(o => sel.has(o.value)).length;
+                          const visibleAll = visible.length > 0 && visible.every(o => optionState(col.key, o) === "all");
+                          const visibleSome = !visibleAll && visible.some(o => optionState(col.key, o) !== "none");
                           return (
-                            <div key={col.key} style={{ width: "220px", display: "flex", flexDirection: "column", padding: "0 8px", borderLeft: idx === 0 ? "none" : `1px solid ${theme.colors.border}` }}>
-                              {/* 컬럼 머리: 전체 체크박스 + 컬럼명 + (선택/전체) */}
-                              <label style={{ display: "flex", alignItems: "center", gap: "6px", padding: "4px", marginBottom: "4px", borderBottom: `1px solid ${theme.colors.border}`, cursor: "pointer", flexShrink: 0 }}>
+                            <div key={col.key} style={{ width: col.filterMode === "orgTree" ? "230px" : "160px", display: "flex", flexDirection: "column", padding: "0 6px", borderLeft: idx === 0 ? "none" : `1px solid ${theme.colors.border}` }}>
+                              {/* 컬럼 머리: 전체 체크박스 + 이름 + (선택/전체) */}
+                              <label style={{ display: "flex", alignItems: "center", gap: "6px", padding: "4px 2px", cursor: "pointer", flexShrink: 0 }}>
                                 <TriStateCheckbox
-                                  checked={allChecked}
-                                  indeterminate={checkedCount > 0 && !allChecked}
-                                  onChange={() => setColumnAll(col.key, !allChecked)}
+                                  checked={visibleAll}
+                                  indeterminate={visibleSome}
+                                  onChange={() => setColumnAll(col.key, !visibleAll, visible)}
                                 />
-                                <span style={{ fontSize: "13px", fontWeight: "600", color: theme.colors.textMain }}>{col.label}</span>
-                                <span style={{ fontSize: "12px", color: theme.colors.textSecondary }}>({checkedCount}/{options.length})</span>
+                                <span style={{ fontSize: "13px", fontWeight: "600", color: theme.colors.textMain, whiteSpace: "nowrap" }}>{col.filterLabel || col.label}</span>
+                                <span style={{ fontSize: "12px", color: theme.colors.textSecondary, whiteSpace: "nowrap" }}>({checkedCount}/{options.length})</span>
                               </label>
+                              {/* 값 검색 */}
+                              <input
+                                type="text"
+                                value={filterSearch[col.key] || ""}
+                                onChange={(e) => setFilterSearch(prev => ({ ...prev, [col.key]: e.target.value }))}
+                                placeholder="검색"
+                                style={{ width: "100%", boxSizing: "border-box", padding: "4px 6px", marginBottom: "4px", fontSize: "12px", border: `1px solid ${theme.colors.border}`, borderRadius: theme.radius.small, outline: "none", flexShrink: 0 }}
+                              />
                               {/* 값 목록 (항목이 많아도 눌리지 않도록 flexShrink 0 + 스크롤) */}
-                              <div style={{ overflowY: "auto", maxHeight: "300px" }}>
-                                {options.length === 0 && (
-                                  <div style={{ fontSize: "12px", color: theme.colors.textDisabled, padding: "4px" }}>표시할 값이 없습니다</div>
+                              <div style={{ overflowY: "auto", maxHeight: "300px", borderTop: `1px solid ${theme.colors.border}`, paddingTop: "4px" }}>
+                                {visible.length === 0 && (
+                                  <div style={{ fontSize: "12px", color: theme.colors.textDisabled, padding: "4px" }}>{term ? "검색 결과 없음" : "표시할 값이 없습니다"}</div>
                                 )}
-                                {options.map(v => (
-                                  <label key={v} title={v} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", lineHeight: "20px", padding: "3px 4px", borderRadius: "3px", cursor: "pointer", flexShrink: 0 }}
-                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.colors.bgHover}
-                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={isFilterChecked(col.key, v)}
-                                      onChange={() => toggleFilterValue(col.key, v)}
-                                      style={{ cursor: "pointer", accentColor: theme.colors.primary, flexShrink: 0, margin: 0 }}
-                                    />
-                                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, color: v === EMPTY_FILTER_LABEL ? theme.colors.textDisabled : theme.colors.textMain }}>{v}</span>
-                                  </label>
-                                ))}
+                                {visible.map(o => {
+                                  const st = optionState(col.key, o);
+                                  return (
+                                    <label key={o.value} title={`${o.label} (${o.count}명)`} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", lineHeight: "20px", padding: "3px 4px", paddingLeft: `${4 + (term ? 0 : o.depth) * 12}px`, borderRadius: "3px", cursor: "pointer", flexShrink: 0 }}
+                                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.colors.bgHover}
+                                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+                                    >
+                                      <TriStateCheckbox checked={st === "all"} indeterminate={st === "some"} onChange={() => toggleFilterOption(col.key, o)} />
+                                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, color: o.label === EMPTY_FILTER_LABEL ? theme.colors.textDisabled : theme.colors.textMain }}>{o.label}</span>
+                                      <span style={{ marginLeft: "auto", fontSize: "11px", color: theme.colors.textDisabled, flexShrink: 0 }}>{o.count}</span>
+                                    </label>
+                                  );
+                                })}
                               </div>
                             </div>
                           );
